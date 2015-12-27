@@ -5,43 +5,45 @@
 
 #include <memory>
 
-class TimerListener {
-protected:
-	TimerListener() {
-		/* Nothing to do */
-	}
+namespace chip8 {
+
+	class TimerListener {
+	protected:
+		TimerListener() {
+			/* Nothing to do */
+		}
 
 
-public:
-	virtual ~TimerListener() { /* Nothing to do */ }
+	public:
+		virtual ~TimerListener() { /* Nothing to do */ }
 
-	virtual void onTick(int timerId, size_t tick) = 0;
-};
+		virtual void onTick(int timerId, size_t tick) = 0;
+	};
 
-class Timer {
-	const int timerId;
-	const TimerListener *listener;
+	class Timer {
 
-	unsigned rate;
+		Timer(const Timer &);
 
+	protected:
+		const int timerId;
+		const TimerListener *listener;
 
-	Timer(const Timer &);
+	public:
+		Timer(int timerId, const TimerListener &listener)
+			: timerId(timerId), listener(&listener) {
+			/* Nothing to do */
+		}
 
-public:
-	Timer(int timerId, const TimerListener &listener)
-		: timerId(timerId), listener(&listener) {
-		/* Nothing to do */
-	}
-
-	~Timer() { /* Nothing to do */ }
-
-
-	virtual void start(unsigned rate) = 0;
-
-	virtual void stop() = 0;
-};
+		~Timer() { /* Nothing to do */ }
 
 
-typedef std::auto_ptr<Timer>(*TimerFactory) (int timerId, const TimerListener &listener);
+		virtual void start(unsigned rate) = 0;
+
+		virtual void stop() = 0;
+	};
+
+}
+
+typedef std::auto_ptr<chip8::Timer>(*TimerFactory) (int timerId, const chip8::TimerListener &listener);
 
 #endif // CHIP8_TIMER_

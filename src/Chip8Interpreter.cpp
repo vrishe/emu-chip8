@@ -1,12 +1,9 @@
 #include "chip8/Chip8Interpreter.h"
 
-#define TIMER_ID_DELAY 1
-#define TIMER_ID_SOUND 2
-
-#define FONT_SYMBOL_HEIGHT		5
-#define PROGRAM_COUNTER_STEP	sizeof(Opcode)
+#define PROGRAM_COUNTER_STEP sizeof(Opcode)
 
 namespace chip8 {
+
 
 	// Default system font. See: http://mattmik.com/chip8.html example.
 	byte Interpreter::font[0x50] = {
@@ -16,12 +13,11 @@ namespace chip8 {
 		/* C */ 0xF0, 0x80, 0x80, 0x80, 0xF0,  /* D */ 0xE0, 0x90, 0x90, 0x90, 0xE0,  /* E */ 0xF0, 0x80, 0x90, 0x80, 0xF0,  /* E */ 0xF0, 0x80, 0xF0, 0x80, 0x80
 	};
 
+#define FONT_SYMBOL_HEIGHT 5
 
-	Interpreter::Interpreter(TimerFactory timerFactory, HardwareHandler *hardwareHandler)
+
+	Interpreter::Interpreter(HardwareHandler *hardwareHandler)
 		: carry(registers[REGISTERS_COUNT - 1]), hardwareHandler(hardwareHandler), rndSeed(reinterpret_cast<word>(this)) {
-
-		timerDelayPulse = timerFactory(TIMER_ID_DELAY, *this);
-		timerSoundPulse = timerFactory(TIMER_ID_SOUND, *this);
 
 		opcodeConverter = ConstructOpcodeConverter(new byte[sizeof(OpcodeConverterBase)]);
 
@@ -32,6 +28,20 @@ namespace chip8 {
 	Interpreter::~Interpreter() {
 		delete[] reinterpret_cast<pbyte>(opcodeConverter);
 	}
+
+
+	void Interpreter::doCycle() {
+		Opcode opcode;
+
+		opcodeConverter->convert(memory + pc, opcode);
+		pc += PROGRAM_COUNTER_STEP;
+
+		(this->*Interpreter::macroCodesLUT[opcode.value >> 12]) (opcode);
+
+		++rndSeed;
+		++countCycles;
+	}
+
 
 	void Interpreter::reset(std::istream &prgStream)
 	{
@@ -49,42 +59,6 @@ namespace chip8 {
 			pc = 0x00;
 		}
 		memset(clientMemory, 0x00, size_t(fillExcessLen));
-	}
-	
-
-	void Interpreter::cycle() {
-		Opcode opcode;
-
-		// 1. Fetch a regular opcode.
-		opcodeConverter->convert(memory + pc, opcode);
-		pc += PROGRAM_COUNTER_STEP;
-
-		// 2. Decode and run an opcode fetched.
-		(this->*Interpreter::macroCodesLUT[opcode.value >> 12]) (opcode);
-
-		++rndSeed;
-	}
-
-	void Interpreter::onTick(int timerId, size_t tick) {
-		switch (timerId) {
-		case TIMER_ID_DELAY:
-			if (timerDelay > 0) {
-				--timerDelay;
-			}
-			if (timerDelay <= 0) {
-				timerDelayPulse->stop();
-			}
-			break;
-
-		case TIMER_ID_SOUND:
-			if (timerSound > 0) {
-				--timerSound;
-			}
-			if (timerSound <= 0) {
-				timerSoundPulse->stop();
-			}
-			break;
-		}
 	}
 
 
@@ -109,6 +83,15 @@ namespace chip8 {
 	// ========================================================
 	// program interpretation
 	// ========================================================
+
+	void Interpreter::onTick(word timerId) {
+		countdown_timer &timer = timers[timerId];
+		
+		if (timer.value > 0) {
+			--timer.value;
+		}
+	}
+
 
 	inline void Interpreter::rca(word address) {
 		if (!!hardwareHandler) {
@@ -172,7 +155,7 @@ namespace chip8 {
 		registers[idx] = registers[idy];
 	}
 	inline void Interpreter::movd(size_t idx) {
-		registers[idx] = timerDelay;
+		registers[idx] = timers[TIMER_DELAY].value;
 	}
 	inline void Interpreter::movrs(size_t idx) {
 		for (int i = idx; i >= 0; --i) {
@@ -279,14 +262,10 @@ namespace chip8 {
 
 
 	inline void Interpreter::sound(size_t idx) {
-		timerSound = registers[idx];
-
-		if (timerSound == 1) {
-			timerSound = 0;
-		}
+		timers[TIMER_SOUND].value = registers[idx] > 1 ? registers[idx] : 0;
 	}
 	inline void Interpreter::delay(size_t idx) {
-		timerDelay = registers[idx];
+		timers[TIMER_DELAY].value = registers[idx];
 	}
 
 
