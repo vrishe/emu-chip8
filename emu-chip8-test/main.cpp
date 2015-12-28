@@ -8,6 +8,11 @@ int _tmain(int argc, _TCHAR* argv[])
 {
 	::testing::InitGoogleTest(&argc, argv);
 
-	return RUN_ALL_TESTS();
+	auto result = RUN_ALL_TESTS();
+
+	std::cout << std::endl << "Hit ANY key to exit.";
+	_getch();
+
+	return result;
 }
 

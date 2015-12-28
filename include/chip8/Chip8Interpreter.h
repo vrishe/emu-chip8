@@ -149,29 +149,10 @@ namespace chip8 {
 		bool frameUpdate;
 
 
-		void reset_impl() {
-			flush();
-
-			timers[TIMER_DELAY].value = 0;
-			timers[TIMER_DELAY].timestamp = TIMESTAMP_UNDEFINED;
-
-			timers[TIMER_SOUND].value = 0;
-			timers[TIMER_SOUND].timestamp = TIMESTAMP_UNDEFINED;
-
-			countCycles = 0;
-
-			sp = STACK_DEPTH;
-			keyHaltRegister = KEY_HALT_UNSET;
-
-			carry = 0;
-			index = 0;
-			pc = OFFSET_PROGRAM_START;
-			kb = 0;
-			
-			memset(registers, 0x00, sizeof(registers));
-		}
+		void reset_impl();
 
 
+		void refreshTimers();
 		void onTick(word timerId);
 
 
@@ -236,11 +217,11 @@ namespace chip8 {
 		// ========================================================
 
 		void push(word value) {
-			stack[sp--] = value;
+			stack[--sp] = value;
 		}
 
 		word pop() {
-			return stack[++sp];
+			return stack[sp++];
 		}
 
 
@@ -282,19 +263,25 @@ namespace chip8 {
 				return snapshot;
 			}
 
+
+			word getTimerDelay() const {
+				return soc->timers[TIMER_DELAY].value;
+			}
+			word getTimerSound() const {
+				return soc->timers[TIMER_SOUND].value;
+			}
+
+			unsigned long long getCountCycles() const {
+				return soc->countCycles;
+			}
+
 			size_t getStackPointer() const {
 				return soc->sp;
 			}
+			size_t getKeyHaltRegister() const {
+				return soc->keyHaltRegister;
+			}
 
-			word getStackTipValue() const {
-				return soc->stack[soc->sp + 1];
-			}
-			word getStackValue(size_t sp) const {
-				return soc->stack[sp];
-			}
-			word getRegisterValue(size_t sp) const {
-				return soc->registers[sp];
-			}
 			word getCarryValue() const {
 				return soc->carry;
 			}
@@ -307,13 +294,16 @@ namespace chip8 {
 			word getKeyboardValue() const {
 				return soc->kb;
 			}
-			word getTimerDelay() const {
-				return soc->timers[TIMER_DELAY].value;
-			}
-			word getTimerSound() const {
-				return soc->timers[TIMER_SOUND].value;
-			}
 
+			word getRegisterValue(size_t sp) const {
+				return soc->registers[sp];
+			}
+			word getStackTipValue() const {
+				return soc->stack[soc->sp + 1];
+			}
+			word getStackValue(size_t sp) const {
+				return soc->stack[sp];
+			}
 			byte getMemoryValue(word address) const {
 				return soc->memory[address];
 			}

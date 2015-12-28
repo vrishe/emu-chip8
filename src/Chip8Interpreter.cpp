@@ -39,7 +39,10 @@ namespace chip8 {
 		(this->*Interpreter::macroCodesLUT[opcode.value >> 12]) (opcode);
 
 		++rndSeed;
-		++countCycles;
+		++countCycles;	// May depend on a certain amount of ticks, each instruction takes on real device.
+						// But we'll stick with that assumption that Chip8 operates @ 60Hz.
+
+		refreshTimers();
 	}
 
 
@@ -80,19 +83,51 @@ namespace chip8 {
 	}
 
 
-	// ========================================================
-	// program interpretation
-	// ========================================================
+	void Interpreter::reset_impl() {
+		flush();
+
+		timers[TIMER_DELAY].value = 0;
+		timers[TIMER_DELAY].timestamp = TIMESTAMP_UNDEFINED;
+
+		timers[TIMER_SOUND].value = 0;
+		timers[TIMER_SOUND].timestamp = TIMESTAMP_UNDEFINED;
+
+		countCycles = 0;
+
+		sp = STACK_DEPTH;
+		keyHaltRegister = KEY_HALT_UNSET;
+
+		carry = 0;
+		index = 0;
+		pc = OFFSET_PROGRAM_START;
+		kb = 0;
+
+		// Not sure we really need this.
+		memset(registers, 0x00, sizeof(registers));
+		memset(stack, 0x00, sizeof(stack));
+	}
+
+
+	void Interpreter::refreshTimers() {
+		onTick(TIMER_DELAY);
+		onTick(TIMER_SOUND);
+	}
 
 	void Interpreter::onTick(word timerId) {
 		countdown_timer &timer = timers[timerId];
-		
+
 		if (timer.value > 0) {
 			--timer.value;
+
+			timer.timestamp = countCycles;
 		}
 	}
 
 
+	// ========================================================
+	// Program interpretation
+	// ========================================================
+	
 	inline void Interpreter::rca(word address) {
 		if (!!hardwareHandler) {
 			hardwareHandler->handle(address);
