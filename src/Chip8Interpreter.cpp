@@ -1,9 +1,9 @@
 #include "chip8/Chip8Interpreter.h"
 
-#define PROGRAM_COUNTER_STEP sizeof(Opcode)
 
 namespace chip8 {
 
+#define FONT_SYMBOL_HEIGHT 5
 
 	// Default system font. See: http://mattmik.com/chip8.html example.
 	byte Interpreter::font[0x50] = {
@@ -13,30 +13,28 @@ namespace chip8 {
 		/* C */ 0xF0, 0x80, 0x80, 0x80, 0xF0,  /* D */ 0xE0, 0x90, 0x90, 0x90, 0xE0,  /* E */ 0xF0, 0x80, 0x90, 0x80, 0xF0,  /* E */ 0xF0, 0x80, 0xF0, 0x80, 0x80
 	};
 
-#define FONT_SYMBOL_HEIGHT 5
+	Interpreter::Interpreter(size_t memorySize)
+		: memorySize(memorySize), carry(registers[REGISTERS_COUNT - 1]), rndSeed(reinterpret_cast<word>(this)) {
 
-
-	Interpreter::Interpreter(HardwareHandler *hardwareHandler)
-		: carry(registers[REGISTERS_COUNT - 1]), hardwareHandler(hardwareHandler), rndSeed(reinterpret_cast<word>(this)) {
-
-		opcodeConverter = ConstructOpcodeConverter(new byte[sizeof(OpcodeConverterBase)]);
-
+		memory = new byte[memorySize];
 		memcpy(memory + OFFSET_FONT_DEFAULT, font, sizeof(font));
+
 		reset(nullptr, -1);
 	}
 
 	Interpreter::~Interpreter() {
-		delete[] reinterpret_cast<pbyte>(opcodeConverter);
+		delete[] memory;
 	}
 
 
-	void Interpreter::doCycle() {
-		Opcode opcode;
+#define PROGRAM_COUNTER_STEP sizeof(Opcode)
+#define EXTRACT_OP(opcode) (opcode.hi >> 4)
 
-		opcodeConverter->convert(memory + pc, opcode);
+	void Interpreter::doCycle() {
+		Opcode opcode = *reinterpret_cast<Opcode *>(const_cast<byte*>(memory + pc));
 		pc += PROGRAM_COUNTER_STEP;
 
-		(this->*Interpreter::macroCodesLUT[opcode.value >> 12]) (opcode);
+		(this->*Interpreter::macroCodesLUT[EXTRACT_OP(opcode)]) (opcode);
 
 		++rndSeed;
 		++countCycles;	// May depend on a certain amount of ticks, each instruction takes on real device.
@@ -51,7 +49,7 @@ namespace chip8 {
 		reset_impl();
 
 		byte *clientMemory = memory + pc;
-		std::streamsize readLen = ADDRESS_SPACE_MAX - pc, fillExcessLen = readLen;
+		std::streamsize readLen = memorySize - pc, fillExcessLen = readLen;
 
 		if (prgStream.good()) {
 			prgStream.read(reinterpret_cast<char *>(clientMemory), readLen);
@@ -108,6 +106,8 @@ namespace chip8 {
 	}
 
 
+#define TIMER_TICK_CYCLES size_t(29333)
+
 	void Interpreter::refreshTimers() {
 		onTick(TIMER_DELAY);
 		onTick(TIMER_SOUND);
@@ -116,10 +116,10 @@ namespace chip8 {
 	void Interpreter::onTick(word timerId) {
 		countdown_timer &timer = timers[timerId];
 
-		if (timer.value > 0) {
+		if (timer.value > 0 && countCycles >= timer.timestamp) {
 			--timer.value;
 
-			timer.timestamp = countCycles;
+			timer.timestamp += TIMER_TICK_CYCLES;
 		}
 	}
 
@@ -129,12 +129,7 @@ namespace chip8 {
 	// ========================================================
 	
 	inline void Interpreter::rca(word address) {
-		if (!!hardwareHandler) {
-			hardwareHandler->handle(address);
-		}
-		else {
-			reset(nullptr, -1);
-		}
+		// TODO: define some other hardware routines here.
 	}
 
 	inline void Interpreter::jmp(word address) {
@@ -298,14 +293,16 @@ namespace chip8 {
 
 	inline void Interpreter::sound(size_t idx) {
 		timers[TIMER_SOUND].value = registers[idx] > 1 ? registers[idx] : 0;
+		timers[TIMER_SOUND].timestamp = countCycles + TIMER_TICK_CYCLES;
 	}
 	inline void Interpreter::delay(size_t idx) {
 		timers[TIMER_DELAY].value = registers[idx];
+		timers[TIMER_DELAY].timestamp = countCycles + TIMER_TICK_CYCLES;
 	}
 
 
 	inline void Interpreter::flush() {
-		memset(frame, 0, _countof(frame));
+		memset(frame, 0x00, _countof(frame));
 
 		carry = 0x01;
 		frameUpdate = true;
@@ -334,7 +331,6 @@ namespace chip8 {
 		}
 	}
 
-
 	inline void Interpreter::sym(size_t idx) {
 		index = OFFSET_FONT_DEFAULT + (registers[idx] & 0x0F) * FONT_SYMBOL_HEIGHT;
 	}
@@ -344,19 +340,16 @@ namespace chip8 {
 	// operation code decoder
 	// ========================================================
 
-#define EXTRACT_REG(opcode, shift)	(opcode.value >> (shift) & 0x0F)
-#define EXTRACT_VAL(opcode, mask)	(opcode.value & mask)
+#define EXTRACT_REGX(opcode) word(opcode.hi & 0x0F)
+#define EXTRACT_REGY(opcode) word(opcode.lo >> 4)
 
-#define EXTRACT_REGX(opcode) EXTRACT_REG(opcode, 8) 
-#define EXTRACT_REGY(opcode) EXTRACT_REG(opcode, 4)
-
-#define EXTRACT_VAL1(opcode) EXTRACT_VAL(opcode, 0x00F)
-#define EXTRACT_VAL2(opcode) EXTRACT_VAL(opcode, 0x0FF)
-#define EXTRACT_VAL3(opcode) EXTRACT_VAL(opcode, 0xFFF)
+#define EXTRACT_VAL1(opcode) word(opcode.lo & 0x0F)
+#define EXTRACT_VAL2(opcode) word(opcode.lo)
+#define EXTRACT_VAL3(opcode) word(((opcode.hi & 0x0F) << 8) | opcode.lo)
 
 
 	void Interpreter::op0(const Opcode &opcode) {
-		switch (opcode.order.lo) {
+		switch (opcode.lo) {
 		case 0xE0:
 			flush();
 			return;

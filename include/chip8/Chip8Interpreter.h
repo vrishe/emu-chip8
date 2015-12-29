@@ -12,6 +12,10 @@ namespace chip8 {
 
 	class Interpreter {
 	public:
+
+		static byte font[0x50];
+
+
 		enum : word {
 			STACK_DEPTH				= 0x10,
 			REGISTERS_COUNT			= 0x10,
@@ -22,9 +26,12 @@ namespace chip8 {
 			OFFSET_FONT_DEFAULT		= 0x50,
 			OFFSET_PROGRAM_START	= 0x200,
 
-			ADDRESS_SPACE_MAX		= 0x1000,
+			ADDRESS_SPACE_DEFAULT	= 0x1000,
 			KEY_HALT_UNSET			= word(-1)
 		};
+
+		typedef byte(Frame)[FRAME_HEIGHT * FRAME_WIDTH];
+
 
 		enum Keyboard : word {
 			KEY_0 = 0x00,
@@ -44,19 +51,9 @@ namespace chip8 {
 			KEY_E = 0x0E,
 			KEY_F = 0x0F,
 		};
+	
 
-		class HardwareHandler {
-		public:
-			virtual void handle(word address) = 0;
-
-			virtual ~HardwareHandler() { /* Nothing to do */ };
-		};
-
-
-		static byte font[0x50];
-
-
-		Interpreter(HardwareHandler *hardwareHandler = nullptr);
+		Interpreter(size_t memorySize = ADDRESS_SPACE_DEFAULT);
 
 		~Interpreter();
 
@@ -81,14 +78,16 @@ namespace chip8 {
 				memcpy(clientMemory, prg, prgLen);
 			}
 			else {
-				memset(clientMemory, 0x00, ADDRESS_SPACE_MAX - pc);
-
-				pc = 0x00;
+				memset(clientMemory, 0x00, memorySize - pc);
 			}
 		}
 
 		void reset(std::istream &prgStream);
 
+
+		bool isPlayingSound() const {
+			return timers[TIMER_SOUND].value > 0;
+		}
 
 		bool isKeyAwaited() const {
 			return keyHaltRegister != KEY_HALT_UNSET;
@@ -96,8 +95,6 @@ namespace chip8 {
 
 		void setKeyHit(Keyboard key);
 
-
-		typedef byte(&Frame)[FRAME_HEIGHT * FRAME_WIDTH];
 
 		bool isFrameUpdated() const {
 			return frameUpdate;
@@ -110,25 +107,19 @@ namespace chip8 {
 
 		enum : size_t {
 			TIMER_DELAY = 0,
-			TIMER_SOUND = 1
-		};
+			TIMER_SOUND = 1,
 
-		enum : unsigned long long {
-			TIMESTAMP_UNDEFINED = ~0ull
+			TIMESTAMP_UNDEFINED = ~0u
 		};
 
 		struct countdown_timer {
-			unsigned long long timestamp;
+			size_t timestamp;
 
 			word value;
 		};
 
 		countdown_timer timers[2];
-
-		unsigned long long countCycles;
-
-		OpcodeConverterBase *opcodeConverter;
-		HardwareHandler		*hardwareHandler;
+		size_t countCycles;
 
 		size_t sp;
 		size_t keyHaltRegister;
@@ -143,14 +134,14 @@ namespace chip8 {
 		word stack[STACK_DEPTH];
 		word registers[REGISTERS_COUNT];
 
-		byte memory[ADDRESS_SPACE_MAX];
-		byte frame[FRAME_WIDTH * FRAME_HEIGHT];
-
+		Frame frame;
 		bool frameUpdate;
+
+		const size_t memorySize;
+		byte *memory;
 
 
 		void reset_impl();
-
 
 		void refreshTimers();
 		void onTick(word timerId);
