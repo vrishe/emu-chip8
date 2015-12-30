@@ -702,6 +702,34 @@ TEST_F(InterpreterTest, OpcodeFXNN_6XNN_ANNN) {
 
 		EXPECT_EQ(308, snapshot.getCountCycles());
 	}
+	// Opcode FX0A \w 6XNN
+	{
+		const byte program[] = { 0x60,0x0A, 0xF0,0x0A, 0x12,0x00 };
+
+		interpreter->reset(program, sizeof(program));
+
+		interpreter->doCycle();
+		EXPECT_EQ(0x0A, snapshot.getRegisterValue(0));
+
+		interpreter->doCycle();
+		ASSERT_TRUE(interpreter->isKeyAwaited());
+		EXPECT_EQ(0x00, snapshot.getKeyHaltRegister());
+
+		interpreter->setKeyHit(Interpreter::KEY_A);
+		interpreter->doCycle();
+		interpreter->doCycle();
+		interpreter->doCycle();
+		interpreter->doCycle();
+
+		EXPECT_EQ(0x0A, snapshot.getKeyboardValue());
+		interpreter->setKeyHit(Interpreter::KEY_NONE);
+		ASSERT_FALSE(interpreter->isKeyAwaited());
+
+		interpreter->doCycle();
+		EXPECT_EQ(Interpreter::OFFSET_PROGRAM_START, snapshot.getProgramCounterValue());
+
+		EXPECT_EQ(18023, snapshot.getCountCycles());
+	}
 	// Opcode FX1E \w 6XNN, ANNN
 	{
 		const byte program[] = { 0x6E,0xDD, 0xA2,0x22, 0xFE,0x1E };
@@ -718,5 +746,91 @@ TEST_F(InterpreterTest, OpcodeFXNN_6XNN_ANNN) {
 		EXPECT_EQ(0x2FF, snapshot.getIndexValue());
 
 		EXPECT_EQ(238, snapshot.getCountCycles());
+	}
+	// Opcode FX65 & FX55 \w 6XNN, ANNN
+	{
+		const byte program[] = { 
+			0x12,0x12, 
+
+			// DATA STORAGE
+			0xFF,0x55, 0xFF,0x55, 0xFF,0x55, 0xFF,0x55, 
+			0xFF,0x55, 0xFF,0x55, 0xFF,0x55, 0xFF,0x55, 
+			
+			0xA2,0x02, 0xFF,0x65,
+
+			// Fill registers with their ordinal numbers
+			0x60,0x00, 0x61,0x01, 0x62,0x02, 0x63,0x03, 
+			0x64,0x04, 0x65,0x05, 0x66,0x06, 0x67,0x07,
+			0x68,0x08, 0x69,0x09, 0x6A,0x0A, 0x6B,0x0B,
+			0x6C,0x0C, 0x6D,0x0D, 0x6E,0x0E, 0x6F,0x0F,
+
+			0xA2,0x02, 0xFF,0x55
+		};
+
+		interpreter->reset(program, sizeof(program));
+
+		interpreter->doCycle();
+		EXPECT_EQ(Interpreter::OFFSET_PROGRAM_START + 18, snapshot.getProgramCounterValue());
+		
+		interpreter->doCycle();
+		EXPECT_EQ(0x202, snapshot.getIndexValue());
+
+		interpreter->doCycle();
+		EXPECT_EQ(0xFF, snapshot.getRegisterValue( 0));
+		EXPECT_EQ(0x55, snapshot.getRegisterValue( 1));
+		EXPECT_EQ(0xFF, snapshot.getRegisterValue( 2));
+		EXPECT_EQ(0x55, snapshot.getRegisterValue( 3));
+		EXPECT_EQ(0xFF, snapshot.getRegisterValue( 4));
+		EXPECT_EQ(0x55, snapshot.getRegisterValue( 5));
+		EXPECT_EQ(0xFF, snapshot.getRegisterValue( 6));
+		EXPECT_EQ(0x55, snapshot.getRegisterValue( 7));
+		EXPECT_EQ(0xFF, snapshot.getRegisterValue( 8));
+		EXPECT_EQ(0x55, snapshot.getRegisterValue( 9));
+		EXPECT_EQ(0xFF, snapshot.getRegisterValue(10));
+		EXPECT_EQ(0x55, snapshot.getRegisterValue(11));
+		EXPECT_EQ(0xFF, snapshot.getRegisterValue(12));
+		EXPECT_EQ(0x55, snapshot.getRegisterValue(13));
+		EXPECT_EQ(0xFF, snapshot.getRegisterValue(14));
+		EXPECT_EQ(0x55, snapshot.getRegisterValue(15));
+
+		interpreter->doCycle();	EXPECT_EQ(0x00, snapshot.getRegisterValue( 0));
+		interpreter->doCycle(); EXPECT_EQ(0x01, snapshot.getRegisterValue( 1));
+		interpreter->doCycle();	EXPECT_EQ(0x02, snapshot.getRegisterValue( 2));
+		interpreter->doCycle();	EXPECT_EQ(0x03, snapshot.getRegisterValue( 3));
+		interpreter->doCycle();	EXPECT_EQ(0x04, snapshot.getRegisterValue( 4));
+		interpreter->doCycle(); EXPECT_EQ(0x05, snapshot.getRegisterValue( 5));
+		interpreter->doCycle();	EXPECT_EQ(0x06, snapshot.getRegisterValue( 6));
+		interpreter->doCycle();	EXPECT_EQ(0x07, snapshot.getRegisterValue( 7));
+		interpreter->doCycle();	EXPECT_EQ(0x08, snapshot.getRegisterValue( 8));
+		interpreter->doCycle(); EXPECT_EQ(0x09, snapshot.getRegisterValue( 9));
+		interpreter->doCycle();	EXPECT_EQ(0x0A, snapshot.getRegisterValue(10));
+		interpreter->doCycle();	EXPECT_EQ(0x0B, snapshot.getRegisterValue(11));
+		interpreter->doCycle();	EXPECT_EQ(0x0C, snapshot.getRegisterValue(12));
+		interpreter->doCycle(); EXPECT_EQ(0x0D, snapshot.getRegisterValue(13));
+		interpreter->doCycle();	EXPECT_EQ(0x0E, snapshot.getRegisterValue(14));
+		interpreter->doCycle();	EXPECT_EQ(0x0F, snapshot.getRegisterValue(15));
+
+		interpreter->doCycle();
+		EXPECT_EQ(0x202, snapshot.getIndexValue());
+
+		interpreter->doCycle();
+		EXPECT_EQ(snapshot.getMemoryValue(Interpreter::OFFSET_PROGRAM_START +  2), snapshot.getRegisterValue( 0));
+		EXPECT_EQ(snapshot.getMemoryValue(Interpreter::OFFSET_PROGRAM_START +  3), snapshot.getRegisterValue( 1));
+		EXPECT_EQ(snapshot.getMemoryValue(Interpreter::OFFSET_PROGRAM_START +  4), snapshot.getRegisterValue( 2));
+		EXPECT_EQ(snapshot.getMemoryValue(Interpreter::OFFSET_PROGRAM_START +  5), snapshot.getRegisterValue( 3));
+		EXPECT_EQ(snapshot.getMemoryValue(Interpreter::OFFSET_PROGRAM_START +  6), snapshot.getRegisterValue( 4));
+		EXPECT_EQ(snapshot.getMemoryValue(Interpreter::OFFSET_PROGRAM_START +  7), snapshot.getRegisterValue( 5));
+		EXPECT_EQ(snapshot.getMemoryValue(Interpreter::OFFSET_PROGRAM_START +  8), snapshot.getRegisterValue( 6));
+		EXPECT_EQ(snapshot.getMemoryValue(Interpreter::OFFSET_PROGRAM_START +  9), snapshot.getRegisterValue( 7));
+		EXPECT_EQ(snapshot.getMemoryValue(Interpreter::OFFSET_PROGRAM_START + 10), snapshot.getRegisterValue( 8));
+		EXPECT_EQ(snapshot.getMemoryValue(Interpreter::OFFSET_PROGRAM_START + 11), snapshot.getRegisterValue( 9));
+		EXPECT_EQ(snapshot.getMemoryValue(Interpreter::OFFSET_PROGRAM_START + 12), snapshot.getRegisterValue(10));
+		EXPECT_EQ(snapshot.getMemoryValue(Interpreter::OFFSET_PROGRAM_START + 13), snapshot.getRegisterValue(11));
+		EXPECT_EQ(snapshot.getMemoryValue(Interpreter::OFFSET_PROGRAM_START + 14), snapshot.getRegisterValue(12));
+		EXPECT_EQ(snapshot.getMemoryValue(Interpreter::OFFSET_PROGRAM_START + 15), snapshot.getRegisterValue(13));
+		EXPECT_EQ(snapshot.getMemoryValue(Interpreter::OFFSET_PROGRAM_START + 16), snapshot.getRegisterValue(14));
+		EXPECT_EQ(snapshot.getMemoryValue(Interpreter::OFFSET_PROGRAM_START + 17), snapshot.getRegisterValue(15));
+
+		EXPECT_EQ(2044, snapshot.getCountCycles());
 	}
 }

@@ -110,10 +110,6 @@ namespace chip8 {
 		index = 0;
 		pc = OFFSET_PROGRAM_START;
 		kb = KEY_NONE;
-
-		// Not sure we really need this.
-		memset(registers, 0x00, sizeof(registers));
-		memset(stack, 0x00, sizeof(stack));
 	}
 
 
@@ -220,16 +216,14 @@ namespace chip8 {
 		registers[idx] = timers[TIMER_DELAY].value;
 	}
 	inline void Interpreter::movrs(size_t idx) {
-		for (int i = idx; i >= 0; --i) {
-			registers[i] = memory[index + i];
+		for (int i = 0; i <= idx; ++i, ++index) {
+			registers[i] = memory[index];
 		}
-		index += idx + 1;
 	}
 	inline void Interpreter::movms(size_t idx) {
-		for (int i = idx; i >= 0; --i) {
-			memory[index + i] = byte(registers[i]);
+		for (int i = 0; i <= idx; ++i, ++index) {
+			memory[index] = byte(registers[i]);
 		}
-		index += idx + 1;
 	}
 
 
@@ -380,7 +374,7 @@ namespace chip8 {
 	}
 
 	inline void Interpreter::sym(size_t idx) {
-		index = (registers[idx] & 0x0F) * FONT_SYMBOL_HEIGHT;
+		index = registers[idx] * FONT_SYMBOL_HEIGHT;
 	}
 
 
@@ -546,7 +540,7 @@ namespace chip8 {
 		auto index = EXTRACT_REGX(opcode);															\
 																									\
 		operation(index);																			\
-		return COUNT_CYCLES_TAKEN_FOR(COUNT_CYCLES_GROUPN_DEFAULT, base + perCycle * (index + 1));	\
+		return COUNT_CYCLES_TAKEN_FOR(COUNT_CYCLES_GROUPN_DEFAULT, base + perCycle * (index + 2));	\
 	}
 
 	size_t Interpreter::opF(const Opcode &opcode) {
