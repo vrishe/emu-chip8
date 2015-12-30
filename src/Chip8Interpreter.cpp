@@ -216,12 +216,12 @@ namespace chip8 {
 		registers[idx] = timers[TIMER_DELAY].value;
 	}
 	inline void Interpreter::movrs(size_t idx) {
-		for (int i = 0; i <= idx; ++i, ++index) {
+		for (size_t i = 0; i <= idx; ++i, ++index) {
 			registers[i] = memory[index];
 		}
 	}
 	inline void Interpreter::movms(size_t idx) {
-		for (int i = 0; i <= idx; ++i, ++index) {
+		for (size_t i = 0; i <= idx; ++i, ++index) {
 			memory[index] = byte(registers[i]);
 		}
 	}

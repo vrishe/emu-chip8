@@ -10,6 +10,14 @@
 #include <stdio.h>
 #include <tchar.h>
 
+#include <cassert>
+
+#define WIN23_LEAN_AND_MEAN
+#include <Windows.h>
+#include <windowsx.h>
+
+#include <gl/GL.h>
+#include <gl/GLU.h>
 
 
-// TODO: reference additional headers your program requires here
+#include "unicode.h"
