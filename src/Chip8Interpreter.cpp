@@ -17,7 +17,7 @@ namespace chip8 {
 		: memorySize(memorySize), carry(registers[REGISTERS_COUNT - 1]), rndSeed(reinterpret_cast<word>(this)) {
 
 		memory = new byte[memorySize];
-		memcpy(memory + OFFSET_FONT_DEFAULT, font, sizeof(font));
+		memcpy(memory, font, sizeof(font));
 
 		reset(nullptr, -1);
 	}
@@ -188,7 +188,7 @@ namespace chip8 {
 		return false;	
 	}
 	inline bool Interpreter::skbh(size_t idx) {
-		if ((kb & 1 << registers[idx]) != 0) {
+		if (kb == registers[idx]) {
 			pc += PROGRAM_COUNTER_STEP;
 			
 			return true;
@@ -196,7 +196,7 @@ namespace chip8 {
 		return false;
 	}
 	inline bool Interpreter::skbnh(size_t idx) {
-		if ((kb & 1 << registers[idx]) == 0) {
+		if (kb != registers[idx]) {
 			pc += PROGRAM_COUNTER_STEP;
 			
 			return true;
@@ -299,16 +299,20 @@ namespace chip8 {
 
 
 	inline void Interpreter::shr(size_t idx, size_t idy) {
-		word src = registers[idy];
+		word &src = registers[idy];
 
-		carry = src && 0x01;
-		registers[idx] = src >> 1;
+		carry = src & 0x01;
+		src = src >> 1;
+
+		registers[idx] = src;
 	}
 	inline void Interpreter::shl(size_t idx, size_t idy) {
-		word src = registers[idy];
+		word &src = registers[idy];
 
 		carry = src >> 7;
-		registers[idx] = src << 1 & 0xFF;
+		src = (src << 1) & 0xFF;
+
+		registers[idx] = src;
 	}
 
 
@@ -344,28 +348,39 @@ namespace chip8 {
 	}
 	inline void Interpreter::sprite(size_t idx, size_t idy, word value) {
 		size_t x = registers[idx] % FRAME_WIDTH, y = registers[idy] % FRAME_HEIGHT;
+		size_t offsetX = FRAME_WIDTH - x;
+
+		if (offsetX < 8) { 
+			offsetX = 8 - offsetX; 
+		}
+		else {
+			offsetX = 0;
+		}
+		bool collision = false;
 
 		for (size_t i = index, imax = index + value; y < FRAME_HEIGHT && i < imax; ++i) {
 			byte *line = frame + x + FRAME_WIDTH * y++;
+			byte stride = memory[i] & (0xFF << offsetX);
 
-			byte stride = memory[i] & (0xFF << (FRAME_WIDTH - 1 - x));
 			while (!!stride) {
 				byte &pixel = *line;
 				byte value = !!(stride & 0x80) ? 0xFF : 0x00;
 
 				pixel ^= value;
-				carry |= (value != 0x00 && pixel == 0x00);
+				collision = (value != 0x00 && pixel == 0x00);
 
 				++line;
 
 				stride <<= 1;
 			}
 		}
+		carry = collision ? 0x01 : 0x00;
+
 		frameUpdate = true;
 	}
 
 	inline void Interpreter::sym(size_t idx) {
-		index = OFFSET_FONT_DEFAULT + (registers[idx] & 0x0F) * FONT_SYMBOL_HEIGHT;
+		index = (registers[idx] & 0x0F) * FONT_SYMBOL_HEIGHT;
 	}
 
 
@@ -384,24 +399,9 @@ namespace chip8 {
 #define COUNT_CYCLES_GROUP0_DEFAULT 40
 #define COUNT_CYCLES_GROUPN_DEFAULT 68
 
-#define COUNT_CYCLES_TAKEN_FOR(fetch, exec)									((fetch) + (exec))
-#define COUNT_CYCLES_TAKEN_BY_GROUP0(exec)									COUNT_CYCLES_TAKEN_FOR(COUNT_CYCLES_GROUP0_DEFAULT, (exec))
-#define COUNT_CYCLES_TAKEN_BY_GROUPN_REGULAR(exec)							COUNT_CYCLES_TAKEN_FOR(COUNT_CYCLES_GROUPN_DEFAULT, (exec))
-#define COUNT_CYCLES_TAKEN_BY_GROUPN_BRANCH(result, execTrue, execFalse) \
-	COUNT_CYCLES_TAKEN_FOR(COUNT_CYCLES_GROUPN_DEFAULT, (result) ? (execTrue) : (execFalse))
-#define COUNT_CYCLES_TAKEN_BY_GROUPN_WEIGHTED(operation, opcode, base, perPoint) \
-	{																								\
-		auto weight = operation(EXTRACT_REGX(opcode));												\
-																									\
-		return COUNT_CYCLES_TAKEN_FOR(COUNT_CYCLES_GROUPN_DEFAULT, base + perPoint * (weight));		\
-	}	
-#define COUNT_CYCLES_TAKEN_BY_GROUPN_SERIAL(operation, opcode, base, perCycle)						\
-	{																								\
-		auto index = EXTRACT_REGX(opcode);															\
-																									\
-		operation(index);																			\
-		return COUNT_CYCLES_TAKEN_FOR(COUNT_CYCLES_GROUPN_DEFAULT, base + perCycle * (index + 1));	\
-	}
+#define COUNT_CYCLES_TAKEN_FOR(fetch, exec)		((fetch) + (exec))
+#define COUNT_CYCLES_TAKEN_BY_GROUP0(exec)		COUNT_CYCLES_TAKEN_FOR(COUNT_CYCLES_GROUP0_DEFAULT, (exec))
+#define COUNT_CYCLES_TAKEN_BY_GROUPN(exec)		COUNT_CYCLES_TAKEN_FOR(COUNT_CYCLES_GROUPN_DEFAULT, (exec))
 
 	size_t Interpreter::op0(const Opcode &opcode) {
 		switch (opcode.lo) {
@@ -420,13 +420,17 @@ namespace chip8 {
 	size_t Interpreter::op1(const Opcode &opcode) {
 		jmp(EXTRACT_VAL3(opcode));
 
-		return COUNT_CYCLES_TAKEN_BY_GROUPN_REGULAR(12);
+		return COUNT_CYCLES_TAKEN_BY_GROUPN(12);
 	}
 	size_t Interpreter::op2(const Opcode &opcode) {
 		call(EXTRACT_VAL3(opcode));
 
-		return COUNT_CYCLES_TAKEN_BY_GROUPN_REGULAR(26);
+		return COUNT_CYCLES_TAKEN_BY_GROUPN(26);
 	}
+
+#define COUNT_CYCLES_TAKEN_BY_GROUPN_BRANCH(result, execTrue, execFalse) \
+	COUNT_CYCLES_TAKEN_FOR(COUNT_CYCLES_GROUPN_DEFAULT, (result) ? (execTrue) : (execFalse))
+
 	size_t Interpreter::op3(const Opcode &opcode) {
 		return COUNT_CYCLES_TAKEN_BY_GROUPN_BRANCH(
 			se(EXTRACT_REGX(opcode), EXTRACT_VAL2(opcode)), 14, 10);
@@ -445,43 +449,43 @@ namespace chip8 {
 	size_t Interpreter::op6(const Opcode &opcode) {
 		movn(EXTRACT_REGX(opcode), EXTRACT_VAL2(opcode));
 
-		return COUNT_CYCLES_TAKEN_BY_GROUPN_REGULAR(6);
+		return COUNT_CYCLES_TAKEN_BY_GROUPN(6);
 	}
 	size_t Interpreter::op7(const Opcode &opcode) {
 		add(EXTRACT_REGX(opcode), EXTRACT_VAL2(opcode));
 
-		return COUNT_CYCLES_TAKEN_BY_GROUPN_REGULAR(10);
+		return COUNT_CYCLES_TAKEN_BY_GROUPN(10);
 	}
 	size_t Interpreter::op8(const Opcode &opcode) {
 		switch (EXTRACT_VAL1(opcode))
 		{
 		case 0x00:
 			movy(EXTRACT_REGX(opcode), EXTRACT_REGY(opcode));
-			return COUNT_CYCLES_TAKEN_BY_GROUPN_REGULAR(12);
+			return COUNT_CYCLES_TAKEN_BY_GROUPN(12);
 		case 0x01:
 			or(EXTRACT_REGX(opcode), EXTRACT_REGY(opcode));
-			return COUNT_CYCLES_TAKEN_BY_GROUPN_REGULAR(44);
+			return COUNT_CYCLES_TAKEN_BY_GROUPN(44);
 		case 0x02:
 			and(EXTRACT_REGX(opcode), EXTRACT_REGY(opcode));
-			return COUNT_CYCLES_TAKEN_BY_GROUPN_REGULAR(44);
+			return COUNT_CYCLES_TAKEN_BY_GROUPN(44);
 		case 0x03:
 			xor(EXTRACT_REGX(opcode), EXTRACT_REGY(opcode));
-			return COUNT_CYCLES_TAKEN_BY_GROUPN_REGULAR(44);
+			return COUNT_CYCLES_TAKEN_BY_GROUPN(44);
 		case 0x04:
 			adc(EXTRACT_REGX(opcode), EXTRACT_REGY(opcode));
-			return COUNT_CYCLES_TAKEN_BY_GROUPN_REGULAR(44);
+			return COUNT_CYCLES_TAKEN_BY_GROUPN(44);
 		case 0x05:
 			sbxyc(EXTRACT_REGX(opcode), EXTRACT_REGY(opcode));
-			return COUNT_CYCLES_TAKEN_BY_GROUPN_REGULAR(44);
+			return COUNT_CYCLES_TAKEN_BY_GROUPN(44);
 		case 0x06:
 			shr(EXTRACT_REGX(opcode), EXTRACT_REGY(opcode));
-			return COUNT_CYCLES_TAKEN_BY_GROUPN_REGULAR(44);
+			return COUNT_CYCLES_TAKEN_BY_GROUPN(44);
 		case 0x07:
 			sbyxc(EXTRACT_REGX(opcode), EXTRACT_REGY(opcode));
-			return COUNT_CYCLES_TAKEN_BY_GROUPN_REGULAR(44);
+			return COUNT_CYCLES_TAKEN_BY_GROUPN(44);
 		case 0x0E:
 			shl(EXTRACT_REGX(opcode), EXTRACT_REGY(opcode));
-			return COUNT_CYCLES_TAKEN_BY_GROUPN_REGULAR(44);
+			return COUNT_CYCLES_TAKEN_BY_GROUPN(44);
 		}
 		return COUNT_CYCLES_GROUPN_DEFAULT;
 	}
@@ -495,17 +499,17 @@ namespace chip8 {
 	size_t Interpreter::opA(const Opcode &opcode) {
 		sti(EXTRACT_VAL3(opcode));
 
-		return COUNT_CYCLES_TAKEN_BY_GROUPN_REGULAR(12);
+		return COUNT_CYCLES_TAKEN_BY_GROUPN(12);
 	}
 	size_t Interpreter::opB(const Opcode &opcode) {
 		jmp0(EXTRACT_VAL3(opcode));
 
-		return COUNT_CYCLES_TAKEN_BY_GROUPN_REGULAR(22);
+		return COUNT_CYCLES_TAKEN_BY_GROUPN(22);
 	}
 	size_t Interpreter::opC(const Opcode &opcode) {
 		rnd(EXTRACT_REGX(opcode), EXTRACT_VAL2(opcode));
 
-		return COUNT_CYCLES_TAKEN_BY_GROUPN_REGULAR(36);
+		return COUNT_CYCLES_TAKEN_BY_GROUPN(36);
 	}
 	size_t Interpreter::opD(const Opcode &opcode) {
 		auto rowsCount = EXTRACT_VAL1(opcode);
@@ -515,9 +519,9 @@ namespace chip8 {
 		// Because it is really hard to estimate an exact number of cycles, 
 		// we provide a linear approximation here.
 		//
-		// 3812 / 12 ~ 254
+		// 3812 / 15 ~ 254
 		// See: http://laurencescotford.co.uk/?p=304 for details.
-		return COUNT_CYCLES_TAKEN_BY_GROUPN_REGULAR(rowsCount * 254);
+		return COUNT_CYCLES_TAKEN_BY_GROUPN(rowsCount * 254);
 	}
 	size_t Interpreter::opE(const Opcode &opcode) {
 		switch (EXTRACT_VAL2(opcode)) {
@@ -530,26 +534,46 @@ namespace chip8 {
 		}
 		return COUNT_CYCLES_GROUPN_DEFAULT;
 	}
+
+#define COUNT_CYCLES_TAKEN_BY_GROUPN_WEIGHTED(operation, opcode, base, perPoint)					\
+	{																								\
+		auto weight = operation(EXTRACT_REGX(opcode));												\
+																									\
+		return COUNT_CYCLES_TAKEN_FOR(COUNT_CYCLES_GROUPN_DEFAULT, base + perPoint * (weight));		\
+	}	
+#define COUNT_CYCLES_TAKEN_BY_GROUPN_SERIAL(operation, opcode, base, perCycle)						\
+	{																								\
+		auto index = EXTRACT_REGX(opcode);															\
+																									\
+		operation(index);																			\
+		return COUNT_CYCLES_TAKEN_FOR(COUNT_CYCLES_GROUPN_DEFAULT, base + perCycle * (index + 1));	\
+	}
+
 	size_t Interpreter::opF(const Opcode &opcode) {
 		switch (EXTRACT_VAL2(opcode)) {
 		case 0x07:
 			movd(EXTRACT_REGX(opcode));
-			return COUNT_CYCLES_TAKEN_BY_GROUPN_REGULAR(10);
+			return COUNT_CYCLES_TAKEN_BY_GROUPN(10);
 		case 0x0A:
 			key(EXTRACT_REGX(opcode));
-			return COUNT_CYCLES_TAKEN_BY_GROUPN_REGULAR(17765);
+
+			// This number is an average of theoretical minimum for 
+			// every 0-F key.
+			//
+			// See: http://laurencescotford.co.uk/?p=347 for details.
+			return COUNT_CYCLES_TAKEN_BY_GROUPN(17765);
 		case 0x15:
 			delay(EXTRACT_REGX(opcode));
-			return COUNT_CYCLES_TAKEN_BY_GROUPN_REGULAR(10);
+			return COUNT_CYCLES_TAKEN_BY_GROUPN(10);
 		case 0x18:
 			sound(EXTRACT_REGX(opcode));
-			return COUNT_CYCLES_TAKEN_BY_GROUPN_REGULAR(10);
+			return COUNT_CYCLES_TAKEN_BY_GROUPN(10);
 		case 0x1E:
 			adi(EXTRACT_REGX(opcode));
-			return COUNT_CYCLES_TAKEN_BY_GROUPN_REGULAR(16);
+			return COUNT_CYCLES_TAKEN_BY_GROUPN(16);
 		case 0x29:
 			sym(EXTRACT_REGX(opcode));
-			return COUNT_CYCLES_TAKEN_BY_GROUPN_REGULAR(20);
+			return COUNT_CYCLES_TAKEN_BY_GROUPN(20);
 		case 0x33: COUNT_CYCLES_TAKEN_BY_GROUPN_WEIGHTED(bcd, opcode, 84, 16);
 		case 0x55: COUNT_CYCLES_TAKEN_BY_GROUPN_SERIAL(movms, opcode, 4, 14);
 		case 0x65: COUNT_CYCLES_TAKEN_BY_GROUPN_SERIAL(movrs, opcode, 4, 14);

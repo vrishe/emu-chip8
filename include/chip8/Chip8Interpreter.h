@@ -23,9 +23,7 @@ namespace chip8 {
 			FRAME_HEIGHT			= 0x20,
 			FRAME_WIDTH				= 0x40,
 
-			OFFSET_FONT_DEFAULT		= 0x50,
 			OFFSET_PROGRAM_START	= 0x200,
-
 			ADDRESS_SPACE_DEFAULT	= 0x1000,
 			KEY_HALT_UNSET			= word(-1)
 		};
@@ -294,13 +292,13 @@ namespace chip8 {
 			word getStackValue(size_t sp) const {
 				return soc->stack[sp];
 			}
-			byte getMemoryValue(word address) const {
+			const byte &getMemoryValue(word address) const {
 				return soc->memory[address];
 			}
-			byte getFrameValue(word x, word y) const {
+			const byte &getFrameValue(word x, word y) const {
 				return soc->frame[y * FRAME_WIDTH + x];
 			}
-			byte getFrameValue(word i) const {
+			const byte &getFrameValue(word i) const {
 				return soc->frame[i];
 			}
 		};
