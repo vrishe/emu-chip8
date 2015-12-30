@@ -17,15 +17,13 @@ namespace chip8 {
 
 
 		enum : word {
-			STACK_DEPTH				= 0x10,
+			STACK_DEPTH				= 0x20,
 			REGISTERS_COUNT			= 0x10,
 
 			FRAME_HEIGHT			= 0x20,
 			FRAME_WIDTH				= 0x40,
 
-			OFFSET_FONT_DEFAULT		= 0x50,
 			OFFSET_PROGRAM_START	= 0x200,
-
 			ADDRESS_SPACE_DEFAULT	= 0x1000,
 			KEY_HALT_UNSET			= word(-1)
 		};
@@ -50,6 +48,7 @@ namespace chip8 {
 			KEY_D = 0x0D,
 			KEY_E = 0x0E,
 			KEY_F = 0x0F,
+			KEY_NONE = 0xFF
 		};
 	
 
@@ -151,19 +150,17 @@ namespace chip8 {
 		// program interpretation
 		// ========================================================
 
-		void rca(word address);								// Call RCA 1802 program.
-
 		void jmp(word address);								// Jump straight to address specified.
 		void jmp0(word address);							// Jump to address + V0 location.
 		void call(word address);							// Call a routine on address specified (current sp is placed on stack).
 		void ret();											// Return after routine call (retrieves a previously stored pc from stack).
 
-		void se(size_t idx, word value);					// Skip, if VX equal NN.
-		void sne(size_t idx, word value);					// Skip, if VX NOT equal NN.
-		void sxye(size_t idx, size_t idy);					// Skip, if VX equal VY.
-		void sxyne(size_t idx, size_t idy);					// Skip, if VX NOT equal VY.
-		void skbh(size_t idx);								// Skip, if keyboard key by value of VX IS pressed.
-		void skbnh(size_t idx);								// Skip, if keyboard key by value of VX IS NOT pressed.
+		bool se(size_t idx, word value);					// Skip, if VX equal NN.
+		bool sne(size_t idx, word value);					// Skip, if VX NOT equal NN.
+		bool sxye(size_t idx, size_t idy);					// Skip, if VX equal VY.
+		bool sxyne(size_t idx, size_t idy);					// Skip, if VX NOT equal VY.
+		bool skbh(size_t idx);								// Skip, if keyboard key by value of VX IS pressed.
+		bool skbnh(size_t idx);								// Skip, if keyboard key by value of VX IS NOT pressed.
 
 
 		void key(size_t idx);								// Wait for a key hit, then write a rey index to VX.
@@ -176,7 +173,7 @@ namespace chip8 {
 
 		void sti(word value);								// Store value to index register.
 
-		void bcd(size_t idx);								// Store the value of register VX binary-decimal encoded within the memory located at [I, I + 1, I + 2].
+		size_t bcd(size_t idx);								// Store the value of register VX binary-decimal encoded within the memory located at [I, I + 1, I + 2].
 
 		void add(size_t idx, word value);					// Add NN to VX.
 		void adc(size_t idx, size_t idy);					// Add VY to VX with carry (1 - occurred, 0 - otherwise).
@@ -224,16 +221,16 @@ namespace chip8 {
 		// clusters. This allows to avoid switch-based branching.
 		// ========================================================
 
-		inline void op0(const Opcode &opcode); inline void op1(const Opcode &opcode);
-		inline void op2(const Opcode &opcode); inline void op3(const Opcode &opcode);
-		inline void op4(const Opcode &opcode); inline void op5(const Opcode &opcode);
-		inline void op6(const Opcode &opcode); inline void op7(const Opcode &opcode);
-		inline void op8(const Opcode &opcode); inline void op9(const Opcode &opcode);
-		inline void opA(const Opcode &opcode); inline void opB(const Opcode &opcode);
-		inline void opC(const Opcode &opcode); inline void opD(const Opcode &opcode);
-		inline void opE(const Opcode &opcode); inline void opF(const Opcode &opcode);
+		inline size_t op0(const Opcode &opcode); inline size_t op1(const Opcode &opcode);
+		inline size_t op2(const Opcode &opcode); inline size_t op3(const Opcode &opcode);
+		inline size_t op4(const Opcode &opcode); inline size_t op5(const Opcode &opcode);
+		inline size_t op6(const Opcode &opcode); inline size_t op7(const Opcode &opcode);
+		inline size_t op8(const Opcode &opcode); inline size_t op9(const Opcode &opcode);
+		inline size_t opA(const Opcode &opcode); inline size_t opB(const Opcode &opcode);
+		inline size_t opC(const Opcode &opcode); inline size_t opD(const Opcode &opcode);
+		inline size_t opE(const Opcode &opcode); inline size_t opF(const Opcode &opcode);
 
-		static void (Interpreter::*const macroCodesLUT[0x10]) (const Opcode &);
+		static size_t (Interpreter::*const macroCodesLUT[0x10]) (const Opcode &);
 
 
 		// ========================================================
@@ -295,13 +292,13 @@ namespace chip8 {
 			word getStackValue(size_t sp) const {
 				return soc->stack[sp];
 			}
-			byte getMemoryValue(word address) const {
+			const byte &getMemoryValue(word address) const {
 				return soc->memory[address];
 			}
-			byte getFrameValue(word x, word y) const {
+			const byte &getFrameValue(word x, word y) const {
 				return soc->frame[y * FRAME_WIDTH + x];
 			}
-			byte getFrameValue(word i) const {
+			const byte &getFrameValue(word i) const {
 				return soc->frame[i];
 			}
 		};
