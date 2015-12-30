@@ -31,12 +31,21 @@ namespace chip8 {
 #define EXTRACT_OP(opcode) (opcode.hi >> 4)
 
 	void Interpreter::doCycle() {
-		Opcode opcode = *reinterpret_cast<Opcode *>(const_cast<byte*>(memory + pc));
-		
-		pc += PROGRAM_COUNTER_STEP;
-		countCycles += (this->*Interpreter::macroCodesLUT[EXTRACT_OP(opcode)]) (opcode);
+		if (!isKeyAwaited()) {
+			Opcode opcode = *reinterpret_cast<Opcode *>(const_cast<byte*>(memory + pc));
 
-		++rndSeed;
+			pc += PROGRAM_COUNTER_STEP;
+			countCycles += (this->*Interpreter::macroCodesLUT[EXTRACT_OP(opcode)]) (opcode);
+
+			++rndSeed;
+		}
+		else {
+			// This branch is responsile for key debounce emulation.
+			// Not sure, it'll take just 9 cycles.
+			//
+			// See: http://laurencescotford.co.uk/?p=347 for details.
+			countCycles += 9;
+		}
 		refreshTimers();
 	}
 
@@ -61,10 +70,15 @@ namespace chip8 {
 
 
 	void Interpreter::setKeyHit(Keyboard key) {
-		if (isKeyAwaited()) {
-			registers[keyHaltRegister] = key;
+		if (isKeyAwaited() 
+			// This check allows to trigger this method on each loop pass.
+			// So, simply there's no need to track keyboard hit externally.
+			&& key == KEY_NONE && kb != KEY_NONE) {
+
+			registers[keyHaltRegister] = kb;
 			keyHaltRegister = KEY_HALT_UNSET;
 
+			// Reset timer sound as it will be overridden by key hit await routine.
 			timers[TIMER_SOUND].value = 0;
 		}
 		kb = key;
