@@ -32,7 +32,7 @@ TEST_F(InterpreterTest, Initialization) {
 	EXPECT_EQ(0, snapshot.getCarryValue());
 	EXPECT_EQ(0, snapshot.getIndexValue());
 	EXPECT_EQ(Interpreter::OFFSET_PROGRAM_START, snapshot.getProgramCounterValue());
-	EXPECT_EQ(0, snapshot.getKeyboardValue());
+	EXPECT_EQ(Interpreter::KEY_NONE, snapshot.getKeyboardValue());
 }
 
 TEST_F(InterpreterTest, Opcode0xxx) {
