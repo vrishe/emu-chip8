@@ -5,7 +5,89 @@
 
 #include "main.h"
 
+typedef struct tagChip8DisplayExtra {
+	HDC		hDC;
+	HGLRC	hGLRC;
+} Chip8DisplayExtra;
+
+static BOOL Chip8DisplayCreate(HWND hWnd, LPCREATESTRUCT lpCreateStruct) {
+	PIXELFORMATDESCRIPTOR pfd = {
+		sizeof(PIXELFORMATDESCRIPTOR),
+		1,
+		PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER,	//Flags
+		PFD_TYPE_RGBA,												//The kind of framebuffer. RGBA or palette.
+		32,															//Colordepth of the framebuffer.
+		0, 0, 0, 0, 0, 0,
+		0,
+		0,
+		0,
+		0, 0, 0, 0,
+		24,															//Number of bits for the depthbuffer
+		8,															//Number of bits for the stencilbuffer
+		0,															//Number of Aux buffers in the framebuffer.
+		PFD_MAIN_PLANE,
+		0,
+		0, 0, 0
+	};
+	Chip8DisplayExtra *extra = new Chip8DisplayExtra;
+	{
+		HDC hDC = GetDC(hWnd);
+		HGLRC hGLRC;
+		{
+			SetPixelFormat(hDC, ChoosePixelFormat(hDC, &pfd), &pfd);
+
+			hGLRC = wglCreateContext(hDC);
+		}
+		wglMakeCurrent(hDC, hGLRC);
+
+		extra->hDC = hDC;
+		extra->hGLRC = hGLRC;
+	}
+	SetWindowLongPtr(hWnd, GWLP_USERDATA, (LONG)extra);
+
+	return TRUE;
+}
+
+static VOID Chip8DisplayDestroy(HWND hWnd) {
+	delete (Chip8DisplayExtra*)GetWindowLongPtr(hWnd, GWLP_USERDATA);
+
+	PostQuitMessage(0);
+}
+
+
+#define CHIP8_DISPLAY_WINDOW _T("Chip8Display")
+
+static LRESULT CALLBACK Chip8DisplayWndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam) {
+	switch (Msg) {
+		HANDLE_MSG(hWnd, WM_CREATE,		Chip8DisplayCreate);
+		HANDLE_MSG(hWnd, WM_DESTROY,	Chip8DisplayDestroy);
+	};
+	return DefWindowProc(hWnd, Msg, wParam, lParam);
+}
+
 DWORD CALLBACK ApplicationInitialization(HINSTANCE hInst, int nCmdShow) {
+	WNDCLASS wc = {
+		CS_OWNDC | CS_HREDRAW | CS_VREDRAW,
+		Chip8DisplayWndProc,
+		0,
+		sizeof(Chip8DisplayExtra*),
+		hInst,
+		0,
+		LoadCursor(NULL, IDC_ARROW),
+		0,
+		0,
+		CHIP8_DISPLAY_WINDOW
+	};
+	RegisterClass(&wc);
+
+	HWND hWnd = CreateWindow(wc.lpszClassName, CHIP8_DISPLAY_WINDOW, WS_OVERLAPPEDWINDOW,
+		CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, NULL, NULL, hInst, NULL);
+	
+	if (hWnd == NULL)
+		return GetLastError();
+
+	ShowWindow(hWnd, nCmdShow);
+
 	return ERROR_SUCCESS;
 }
 
