@@ -16,8 +16,9 @@
 #include <Windows.h>
 #include <windowsx.h>
 
+#include "GL/glew.h"
+#include "GL/wglew.h"
 #include <gl/GL.h>
 #include <gl/GLU.h>
-
 
 #include "unicode.h"
