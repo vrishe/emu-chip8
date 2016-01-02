@@ -10,7 +10,7 @@ namespace chip8 {
 		/* 0 */ 0xF0, 0x90, 0x90, 0x90, 0xF0,  /* 1 */ 0x20, 0x60, 0x20, 0x20, 0x70,  /* 2 */ 0xF0, 0x10, 0xF0, 0x80, 0xF0,  /* 3 */ 0xF0, 0x10, 0xF0, 0x10, 0xF0,
 		/* 4 */ 0x90, 0x90, 0xF0, 0x10, 0x10,  /* 5 */ 0xF0, 0x80, 0xF0, 0x10, 0xF0,  /* 6 */ 0xF0, 0x80, 0xF0, 0x90, 0xF0,  /* 7 */ 0xF0, 0x10, 0x20, 0x40, 0x40,
 		/* 8 */ 0xF0, 0x90, 0xF0, 0x90, 0xF0,  /* 9 */ 0xF0, 0x90, 0xF0, 0x10, 0xF0,  /* A */ 0xF0, 0x90, 0xF0, 0x90, 0x90,  /* B */ 0xE0, 0x90, 0xE0, 0x90, 0xE0,
-		/* C */ 0xF0, 0x80, 0x80, 0x80, 0xF0,  /* D */ 0xE0, 0x90, 0x90, 0x90, 0xE0,  /* E */ 0xF0, 0x80, 0x90, 0x80, 0xF0,  /* E */ 0xF0, 0x80, 0xF0, 0x80, 0x80
+		/* C */ 0xF0, 0x80, 0x80, 0x80, 0xF0,  /* D */ 0xE0, 0x90, 0x90, 0x90, 0xE0,  /* E */ 0xF0, 0x80, 0xF0, 0x80, 0xF0,  /* E */ 0xF0, 0x80, 0xF0, 0x80, 0x80
 	};
 
 	Interpreter::Interpreter(size_t memorySize)
@@ -59,7 +59,8 @@ namespace chip8 {
 
 		if (prgStream.good()) {
 			prgStream.read(reinterpret_cast<char *>(clientMemory), readLen);
-
+			
+			clientMemory += prgStream.gcount();
 			fillExcessLen -= prgStream.gcount();
 		}
 		if (fillExcessLen == readLen) {
@@ -75,7 +76,11 @@ namespace chip8 {
 			// So, simply there's no need to track keyboard hit externally.
 			&& key == KEY_NONE && kb != KEY_NONE) {
 
-			registers[keyHaltRegister] = kb;
+			byte keyIdx = 0;
+			while (((kb >> keyIdx) & 0x01) == 0) {
+				++keyIdx;
+			}
+			registers[keyHaltRegister] = keyIdx;
 			keyHaltRegister = KEY_HALT_UNSET;
 
 			// Reset timer sound as it will be overridden by key hit await routine.
@@ -184,7 +189,7 @@ namespace chip8 {
 		return false;	
 	}
 	inline bool Interpreter::skbh(size_t idx) {
-		if (kb == registers[idx]) {
+		if (!!(kb & (0x01 << registers[idx]))) {
 			pc += PROGRAM_COUNTER_STEP;
 			
 			return true;
@@ -192,7 +197,7 @@ namespace chip8 {
 		return false;
 	}
 	inline bool Interpreter::skbnh(size_t idx) {
-		if (kb != registers[idx]) {
+		if (!!(kb & (0x01 << registers[idx]))) {
 			pc += PROGRAM_COUNTER_STEP;
 			
 			return true;
@@ -335,7 +340,7 @@ namespace chip8 {
 
 
 	inline void Interpreter::flush() {
-		memset(frame, 0x00, _countof(frame));
+		memset(frame, 0x00, sizeof(frame));
 
 		carry = 0x01;
 		frameUpdate = true;
