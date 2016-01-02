@@ -4,7 +4,54 @@
 #include "stdafx.h"
 
 #include "main.h"
-#include "chip8\Chip8Interpreter.h"
+#include "interpretation.h"
+
+
+class DefaultKeyMapper : public IKeyMapper {
+
+	std::atomic_ushort kbstate;
+
+public:
+
+	DefaultKeyMapper() {
+		kbstate = chip8::Interpreter::KEY_NONE;
+	}
+
+	void updateKey(UINT vk, BOOL fDown) {
+		USHORT result = kbstate, reference = result;
+
+		switch (vk) {
+		case '1': result = fDown ? (result | chip8::Interpreter::KEY_0) : (result & ~chip8::Interpreter::KEY_0);  break;
+		case '2': result = fDown ? (result | chip8::Interpreter::KEY_1) : (result & ~chip8::Interpreter::KEY_1);  break;
+		case '3': result = fDown ? (result | chip8::Interpreter::KEY_2) : (result & ~chip8::Interpreter::KEY_2);  break;
+		case '4': result = fDown ? (result | chip8::Interpreter::KEY_3) : (result & ~chip8::Interpreter::KEY_3);  break;
+		case 'Q': result = fDown ? (result | chip8::Interpreter::KEY_4) : (result & ~chip8::Interpreter::KEY_4);  break;
+		case 'W': result = fDown ? (result | chip8::Interpreter::KEY_5) : (result & ~chip8::Interpreter::KEY_5);  break;
+		case 'E': result = fDown ? (result | chip8::Interpreter::KEY_6) : (result & ~chip8::Interpreter::KEY_6);  break;
+		case 'R': result = fDown ? (result | chip8::Interpreter::KEY_7) : (result & ~chip8::Interpreter::KEY_7);  break;
+		case 'A': result = fDown ? (result | chip8::Interpreter::KEY_8) : (result & ~chip8::Interpreter::KEY_8);  break;
+		case 'S': result = fDown ? (result | chip8::Interpreter::KEY_9) : (result & ~chip8::Interpreter::KEY_9);  break;
+		case 'D': result = fDown ? (result | chip8::Interpreter::KEY_A) : (result & ~chip8::Interpreter::KEY_A);  break;
+		case 'F': result = fDown ? (result | chip8::Interpreter::KEY_B) : (result & ~chip8::Interpreter::KEY_B);  break;
+		case 'Z': result = fDown ? (result | chip8::Interpreter::KEY_C) : (result & ~chip8::Interpreter::KEY_C);  break;
+		case 'X': result = fDown ? (result | chip8::Interpreter::KEY_D) : (result & ~chip8::Interpreter::KEY_D);  break;
+		case 'C': result = fDown ? (result | chip8::Interpreter::KEY_E) : (result & ~chip8::Interpreter::KEY_E);  break;
+		case 'V': result = fDown ? (result | chip8::Interpreter::KEY_F) : (result & ~chip8::Interpreter::KEY_F);  break;
+		}
+		if (result != reference) {
+			kbstate = result;
+		}
+	}
+
+	virtual chip8::Interpreter::Keyboard mapKey() {
+		return (chip8::Interpreter::Keyboard)kbstate.load();
+	}
+};
+static chip8::Interpreter machine;
+static DefaultKeyMapper defaultKeyMapper;
+
+
+#define DISPLAY_PIXEL_COLOR { 0.0f, 0.6549f, 0.0f, 1.0f }
 
 typedef struct tagChip8DisplayExtra {
 	HDC		hDC;
@@ -16,6 +63,8 @@ typedef struct tagChip8DisplayExtra {
 	GLuint screenShaderV;
 	GLuint screenShaderF;
 	GLuint screenShaderPrg;
+
+	InterpretationThread *interpreter;
 } Chip8DisplayExtra;
 
 typedef struct tagPoint2D {
@@ -25,8 +74,6 @@ typedef struct tagPoint2D {
 	GLfloat u;
 	GLfloat v;
 } Point2D;
-
-static chip8::Interpreter::Frame testFrame;
 
 // Shader sources
 static const GLchar* vertexSource =
@@ -39,11 +86,12 @@ static const GLchar* vertexSource =
 	"}";
 static const GLchar* fragmentSource =
 	"#version 150 compatibility\n"
+	"uniform vec4 foregroundColor;"
 	"uniform sampler2D frame;"
 	"in vec2 frameCoord;"
 	"\n"
 	"void main() {"
-	"	gl_FragColor = texture2D(frame, frameCoord).rrra;"
+	"	gl_FragColor = foregroundColor * texture2D(frame, frameCoord).rrra;"
 	"}";
 
 void PrintOpenGLVersion();
@@ -57,7 +105,7 @@ void PrintOpenGLShaderLog(GLuint shaderId);
 #define PRINT_OPENGL_SHADER_LOG(shaderId)
 #endif // _DEBUG
 
-static void CreateGLContext(HDC hDC, Chip8DisplayExtra *extra) {
+static void CreateGLContext(Chip8DisplayExtra *extra) {
 	HGLRC hGLRC;
 	{
 		PIXELFORMATDESCRIPTOR pfd = {
@@ -78,13 +126,13 @@ static void CreateGLContext(HDC hDC, Chip8DisplayExtra *extra) {
 			0,
 			0, 0, 0
 		};
-		auto pixelFormat = ChoosePixelFormat(hDC, &pfd);
+		auto pixelFormat = ChoosePixelFormat(extra->hDC, &pfd);
 
-		SetPixelFormat(hDC, pixelFormat, &pfd);
+		SetPixelFormat(extra->hDC, pixelFormat, &pfd);
 
-		hGLRC = wglCreateContext(hDC);
+		hGLRC = wglCreateContext(extra->hDC);
 	}
-	wglMakeCurrent(hDC, hGLRC);
+	wglMakeCurrent(extra->hDC, hGLRC);
 
 	PRINT_OPENGL_VERSIOND();
 	glewInit();
@@ -92,7 +140,6 @@ static void CreateGLContext(HDC hDC, Chip8DisplayExtra *extra) {
 	glDisable(GL_DEPTH_TEST);
 	glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 
-	extra->hDC = hDC;
 	extra->hGLRC = hGLRC;
 }
 
@@ -136,7 +183,7 @@ static void CreateGLScene(Chip8DisplayExtra *extra, double l, double t, double r
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, chip8::Interpreter::FRAME_WIDTH, 
-		chip8::Interpreter::FRAME_HEIGHT, 0, GL_RED, GL_UNSIGNED_BYTE, testFrame);
+		chip8::Interpreter::FRAME_HEIGHT, 0, GL_RED, GL_UNSIGNED_BYTE, NULL);
 
 	idShaderV = glCreateShader(GL_VERTEX_SHADER);
 	idShaderF = glCreateShader(GL_FRAGMENT_SHADER);
@@ -153,12 +200,16 @@ static void CreateGLScene(Chip8DisplayExtra *extra, double l, double t, double r
 	glGetProgramiv(idShaderPrg, GL_LINK_STATUS, &linked);
 	assert(linked);
 	{
+		glUseProgram(idShaderPrg);
+
+		GLint uniformForegroundColor = glGetUniformLocation(idShaderPrg, "foregroundColor");
 		GLint uniformFrame = glGetUniformLocation(idShaderPrg, "frame");
 
+		GLfloat foregroundColor[] = DISPLAY_PIXEL_COLOR;
+
+		glUniform4fv(uniformForegroundColor, 1, foregroundColor);
 		glUniform1i(uniformFrame, 0);
 	}
-	glUseProgram(idShaderPrg);
-
 	extra->screenVBO = idVBO;
 	extra->screenEBO = idEBO;
 	extra->screenTex = idTex;
@@ -182,17 +233,6 @@ static void DestroyGLScene(Chip8DisplayExtra *extra) {
 	glDeleteBuffers(1, &extra->screenVBO);
 }
 
-static DWORD time;
-
-static void CALLBACK TestTickHandler(HWND hWnd, UINT, UINT_PTR, DWORD) {
-	testFrame[16] ^= 0xFF;
-
-	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, chip8::Interpreter::FRAME_WIDTH,
-		chip8::Interpreter::FRAME_HEIGHT, GL_RED, GL_UNSIGNED_BYTE, testFrame);
-
-	InvalidateRect(hWnd, NULL, TRUE);
-}
-
 static void DrawGLScene(Chip8DisplayExtra *extra) {
 	glClear(GL_COLOR_BUFFER_BIT);
 	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
@@ -203,29 +243,33 @@ static void DrawGLScene(Chip8DisplayExtra *extra) {
 #define OBTAIN_DISPLAY_EXTRA(hwnd)				((Chip8DisplayExtra*)GetWindowLongPtr(hWnd, GWLP_USERDATA))
 
 static BOOL Chip8DisplayCreate(HWND hWnd, LPCREATESTRUCT lpCreateStruct) {
-
 	auto extra = new Chip8DisplayExtra;
 	{
-		CreateGLContext(GetDC(hWnd), extra);
+		extra->interpreter = new InterpretationThread(hWnd, &machine, &defaultKeyMapper);
+		extra->hDC = GetDC(hWnd);
+
+		CreateGLContext(extra);
 		CreateGLScene(extra, 0, 0, 0, 0); // Not sure we need this.
 	}
 	ASSIGN_DISPLAY_EXTRA(hWnd, extra);
-
-	SetTimer(hWnd, 1, 500, TestTickHandler);
 
 	return TRUE;
 }
 
 static VOID Chip8DisplayDestroy(HWND hWnd) {
 	auto extra = OBTAIN_DISPLAY_EXTRA(hWnd);
+
+	if (!!extra)
 	{
 		DestroyGLScene(extra);
 		DestroyGLContext(extra);
 
 		ReleaseDC(hWnd, extra->hDC);
-	}
-	delete extra;
+		delete extra->interpreter;
+		delete extra;
 
+		ASSIGN_DISPLAY_EXTRA(hWnd, NULL);
+	}
 	PostQuitMessage(0);
 }
 
@@ -269,6 +313,71 @@ static VOID Chip8DisplaySize(HWND hWnd, UINT state, int cx, int cy) {
 	DestroyGLScene(extra);
 	CreateGLScene(extra, l, t, r, b);
 }
+
+static VOID Chip8DisplayCommand(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify) {
+	if (codeNotify == 0) {
+		auto extra = OBTAIN_DISPLAY_EXTRA(hWnd);
+
+		switch (id) {
+		case ID_FILE_LOAD:
+		{
+			OPENFILENAME ofn = { 0 };
+			{
+				ofn.lStructSize = sizeof(OPENFILENAME);
+				ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+				ofn.hwndOwner = hWnd;
+
+				ofn.nMaxFile = 32767;
+				ofn.lpstrFile = new TCHAR[ofn.nMaxFile + 1];
+				ofn.lpstrFile[0] = _T('\0');
+			}
+			if (GetOpenFileName(&ofn)) {
+				extra->interpreter->start(ofn.lpstrFile);
+			}
+			delete[] ofn.lpstrFile;
+
+			break;
+		}
+		case ID_FILE_RESET:
+			extra->interpreter->reset();
+			break;
+		case ID_FILE_EXIT:
+			extra->interpreter->stop();
+			DestroyWindow(hWnd);
+			break;
+		}
+	}
+}
+
+static void Chip8DisplayKeyUpDown(HWND hwnd, UINT vk, BOOL fDown, int cRepeat, UINT flags) {
+	defaultKeyMapper.updateKey(vk, fDown);
+}
+
+static void Chip8DisplayUserInterpretation(HWND hWnd, InterpretationThread *interpreter) {
+	auto frame = interpreter->beginFrameUpdate();
+	{
+		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, chip8::Interpreter::FRAME_WIDTH,
+			chip8::Interpreter::FRAME_HEIGHT, GL_RED, GL_UNSIGNED_BYTE, frame);
+	}
+	interpreter->endFrameUpdate();
+
+	InvalidateRect(hWnd, NULL, TRUE);
+}
+
+static LRESULT CALLBACK Chip8DisplayWndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam) {
+	switch (Msg) {
+		HANDLE_MSG(hWnd, WM_CREATE, Chip8DisplayCreate);
+		HANDLE_MSG(hWnd, WM_DESTROY, Chip8DisplayDestroy);
+		HANDLE_MSG(hWnd, WM_SIZE, Chip8DisplaySize);
+		HANDLE_MSG(hWnd, WM_PAINT, Chip8DisplayPaint);
+		HANDLE_MSG(hWnd, WM_COMMAND, Chip8DisplayCommand);
+		HANDLE_MSG(hWnd, WM_KEYDOWN, Chip8DisplayKeyUpDown);
+		HANDLE_MSG(hWnd, WM_KEYUP, Chip8DisplayKeyUpDown);
+		HANDLE_MSG(hWnd, WM_USER_INTERPRETATION, Chip8DisplayUserInterpretation);
+	};
+	return DefWindowProc(hWnd, Msg, wParam, lParam);
+}
+
 
 #ifdef _DEBUG
 static void PrintOpenGLVersion() {
@@ -343,16 +452,6 @@ void PrintOpenGLShaderLog(GLuint shaderId) {
 
 #define CHIP8_DISPLAY_WINDOW _T("Chip8Display")
 
-static LRESULT CALLBACK Chip8DisplayWndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam) {
-	switch (Msg) {
-		HANDLE_MSG(hWnd, WM_CREATE,		Chip8DisplayCreate);
-		HANDLE_MSG(hWnd, WM_DESTROY,	Chip8DisplayDestroy);
-		HANDLE_MSG(hWnd, WM_SIZE,		Chip8DisplaySize);
-		HANDLE_MSG(hWnd, WM_PAINT,		Chip8DisplayPaint);
-	};
-	return DefWindowProc(hWnd, Msg, wParam, lParam);
-}
-
 DWORD CALLBACK ApplicationInitialization(HINSTANCE hInst, int nCmdShow) {
 	WNDCLASS wc = {
 		CS_OWNDC | CS_HREDRAW | CS_VREDRAW,
@@ -363,7 +462,7 @@ DWORD CALLBACK ApplicationInitialization(HINSTANCE hInst, int nCmdShow) {
 		0,
 		LoadCursor(NULL, IDC_ARROW),
 		0,
-		0,
+		MAKEINTRESOURCE(IDR_MENU1),
 		CHIP8_DISPLAY_WINDOW
 	};
 	RegisterClass(&wc);
@@ -371,7 +470,7 @@ DWORD CALLBACK ApplicationInitialization(HINSTANCE hInst, int nCmdShow) {
 	auto windowStyle = WS_OVERLAPPEDWINDOW & ~(WS_SIZEBOX | WS_MAXIMIZEBOX);
 
 	RECT windowRect = { 0, 0, 640, 320 };
-	AdjustWindowRect(&windowRect, windowStyle, FALSE);
+	AdjustWindowRect(&windowRect, windowStyle, TRUE);
 
 	HWND hWnd = CreateWindow(wc.lpszClassName, _T("CHIP-8"), windowStyle, CW_USEDEFAULT, 0, 
 		windowRect.right - windowRect.left, windowRect.bottom - windowRect.top, NULL, NULL, hInst, NULL);

@@ -11,19 +11,25 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\include\main.h" />
-    <ClInclude Include="..\include\stdafx.h" />
-    <ClInclude Include="..\include\targetver.h" />
-    <ClInclude Include="..\include\unicode.h" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClCompile Include="..\src\main.cpp" />
-    <ClCompile Include="..\src\stdafx.cpp" />
+    <ClInclude Include="interpretation.h" />
+    <ClInclude Include="main.h" />
+    <ClInclude Include="resource.h" />
+    <ClInclude Include="stdafx.h" />
+    <ClInclude Include="targetver.h" />
+    <ClInclude Include="unicode.h" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\emu-chip8-core\emu-chip8-core.vcxproj">
       <Project>{fc5bb8b9-41c9-404d-ad4a-20adaed19ff7}</Project>
     </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="Menu.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="interpretation.cpp" />
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="stdafx.cpp" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{A5D6C2DE-D298-4A9C-B4C2-AD5CDFCD573B}</ProjectGuid>

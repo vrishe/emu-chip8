@@ -10,7 +10,13 @@
 #include <stdio.h>
 #include <tchar.h>
 
+#include <atomic>
 #include <cassert>
+#include <exception>
+#include <fstream>
+#include <memory>
+#include <queue>
+#include <thread>
 
 #define WIN23_LEAN_AND_MEAN
 #include <Windows.h>
