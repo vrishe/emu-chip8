@@ -184,23 +184,17 @@ static void DestroyGLScene(Chip8DisplayExtra *extra) {
 
 static DWORD time;
 
-static void CALLBACK TestTickHandler() {
+static void CALLBACK TestTickHandler(HWND hWnd, UINT, UINT_PTR, DWORD) {
 	testFrame[16] ^= 0xFF;
 
 	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, chip8::Interpreter::FRAME_WIDTH,
 		chip8::Interpreter::FRAME_HEIGHT, GL_RED, GL_UNSIGNED_BYTE, testFrame);
+
+	InvalidateRect(hWnd, NULL, TRUE);
 }
 
 static void DrawGLScene(Chip8DisplayExtra *extra) {
 	glClear(GL_COLOR_BUFFER_BIT);
-
-	DWORD currentTime = GetTickCount();
-
-	if (currentTime - time > 500) {
-		time = currentTime;
-
-		TestTickHandler();		
-	}
 	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 }
 
@@ -213,9 +207,11 @@ static BOOL Chip8DisplayCreate(HWND hWnd, LPCREATESTRUCT lpCreateStruct) {
 	auto extra = new Chip8DisplayExtra;
 	{
 		CreateGLContext(GetDC(hWnd), extra);
-		CreateGLScene(extra, 0, 0, 0, 0);				// Not sure we need this.
+		CreateGLScene(extra, 0, 0, 0, 0); // Not sure we need this.
 	}
 	ASSIGN_DISPLAY_EXTRA(hWnd, extra);
+
+	SetTimer(hWnd, 1, 500, TestTickHandler);
 
 	return TRUE;
 }
@@ -234,11 +230,16 @@ static VOID Chip8DisplayDestroy(HWND hWnd) {
 }
 
 static VOID Chip8DisplayPaint(HWND hWnd) {
-	auto extra = OBTAIN_DISPLAY_EXTRA(hWnd);
+	static PAINTSTRUCT ps;
+
+	BeginPaint(hWnd, &ps);
 	{
+		auto extra = OBTAIN_DISPLAY_EXTRA(hWnd);
+
 		DrawGLScene(extra);
+		SwapBuffers(extra->hDC);
 	}
-	SwapBuffers(extra->hDC);
+	EndPaint(hWnd, &ps);
 }
 
 static VOID Chip8DisplaySize(HWND hWnd, UINT state, int cx, int cy) {
