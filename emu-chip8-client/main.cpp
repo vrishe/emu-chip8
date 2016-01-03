@@ -282,7 +282,7 @@ static RECT counterTextRect = {
 
 static void UpdateFrameRateCounter() {
 	ULONGLONG timeCurrent = GetTickCount64();
-	FLOAT timeDifference = timeCurrent - timeLastFrame;
+	FLOAT timeDifference = FLOAT(timeCurrent - timeLastFrame);
 
 	if (timeDifference >= 1000) {
 		TCHAR output[13] = { 0 };

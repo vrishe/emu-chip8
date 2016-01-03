@@ -34,6 +34,14 @@ class InterpretationThread {
 
 	const HWND	hwndOwner;
 
+#ifdef _DEBUG
+	chip8::Interpreter::Snapshot snapshot;
+#define ATTACH_DEBUG_SNAPSHOT(interpreter) \
+	chip8::Interpreter::Snapshot::obtain(snapshot, interpreter)
+#else
+#define ATTACH_DEBUG_SNAPSHOT(interpreter)
+#endif // _DEBUG
+
 	chip8::Interpreter *	const interpreter;
 	IKeyMapper *			const keyMapper;
 
@@ -60,6 +68,8 @@ public:
 		: hwndOwner(hwndOwner), interpreter(interpreter), keyMapper(keyMapper) {
 
 		interpreter->reset();
+
+		ATTACH_DEBUG_SNAPSHOT(*interpreter);
 	}
 
 	~InterpretationThread() {

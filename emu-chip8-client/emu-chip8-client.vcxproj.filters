@@ -29,6 +29,9 @@
     <ClInclude Include="interpretation.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="string.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Menu.rc" />
@@ -43,5 +46,11 @@
     <ClCompile Include="interpretation.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="string.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Keypad Test [Rishe, 2016]" />
   </ItemGroup>
 </Project>

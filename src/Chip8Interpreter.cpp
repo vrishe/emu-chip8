@@ -1,5 +1,6 @@
 #include "chip8/Chip8Interpreter.h"
 
+#include <cassert>
 
 namespace chip8 {
 
@@ -26,30 +27,124 @@ namespace chip8 {
 		delete[] memory;
 	}
 
+#ifdef _DEBUG
+#define MODIFY_ARRAY_OP(arr, idx, op, value, lower, higher)	\
+	{														\
+		assert(lower <= (idx) && (idx) < higher);			\
+		arr[idx] op (value);								\
+	}
+#define READ_ARRAY(arr, idx, lower, higher)					\
+	(														\
+		assert(lower <= (idx) && (idx) < higher),			\
+		arr[idx]											\
+	)
+#define FETCH_OPCODE(offset, lower, higher)					\
+	(														\
+		assert(lower <= (offset) && (offset) < higher),		\
+		(memory + (offset))									\
+	)
+#else
+#define MODIFY_ARRAY_OP(arr, idx, op, value, lower, higher) \
+	(failState = !(lower <= (idx) && (idx) < higher), arr[idx] op (value))
+#define READ_ARRAY(arr, idx, lower, higher)	\
+	(failState = !(lower <= (idx) && (idx) < higher), arr[idx])
+#define FETCH_OPCODE(offset, lower, higher)	\
+	(failState = !(lower <= (offset) && (offset) < higher), (memory + (offset)))
+#endif // _DEBUG
+
+#define MODIFY_STACK(idx, value) \
+	MODIFY_ARRAY_OP(stack, idx, =, value, 0U, Interpreter::STACK_DEPTH)
+#define READ_STACK(idx) \
+	READ_ARRAY(stack, idx, 0U, Interpreter::STACK_DEPTH)
+
+#define MODIFY_REGISTER_OP(idx, op, value) \
+	MODIFY_ARRAY_OP(registers, idx, op, value, 0U, Interpreter::REGISTERS_COUNT)
+#define MODIFY_REGISTER(idx, value) \
+	MODIFY_ARRAY_OP(registers, idx, =, value, 0U, Interpreter::REGISTERS_COUNT)
+#define READ_REGISTER(idx) \
+	READ_ARRAY(registers, idx, 0, Interpreter::REGISTERS_COUNT)
+
+#define MODIFY_MEMORY_OP(idx, op, value) \
+	MODIFY_ARRAY_OP(memory, idx, op, value, Interpreter::OFFSET_PROGRAM_START, memorySize)
+#define MODIFY_MEMORY(idx, value) \
+	MODIFY_ARRAY_OP(memory, idx, =, value, Interpreter::OFFSET_PROGRAM_START, memorySize)
+#define READ_MEMORY(idx) \
+	READ_ARRAY(memory, idx, 0U, memorySize)
+
 
 #define PROGRAM_COUNTER_STEP sizeof(Opcode)
 #define EXTRACT_OP(opcode) (opcode.hi >> 4)
 
-	void Interpreter::doCycle() {
-		if (!isKeyAwaited()) {
-			Opcode opcode = *reinterpret_cast<Opcode *>(const_cast<byte*>(memory + pc));
+	void Interpreter::doCycle(Keyboard key) {
+		assert(isOk());
 
-			pc += PROGRAM_COUNTER_STEP;
-			countCycles += (this->*Interpreter::macroCodesLUT[EXTRACT_OP(opcode)]) (opcode);
+		if (isKeyAwaited()) {
+			auto &timer = timers[TIMER_SOUND];
 
-			++rndSeed;
-		}
-		else {
+			// This check allows to trigger this method on each loop pass.
+			// So, simply there's no need to track keyboard hit externally.
+			if (key == KEY_NONE && kb != KEY_NONE) {
+
+				byte keyIdx = 0;
+				while (((kb >> keyIdx) & 0x01) == 0) {
+					++keyIdx;
+				}
+				registers[keyHaltRegister] = keyIdx;
+				keyHaltRegister = KEY_HALT_UNSET;
+
+				// Reset timer sound as it will be overridden by key hit await routine.
+				timer.value = 0;
+			} 
+			else {
+				// Continue beep'ing until key is not released.
+				if (timer.value == 0) {
+					timer.value = 4;
+				}
+			}
 			// This branch is responsile for key debounce emulation.
 			// Not sure, it'll take just 9 cycles.
 			//
 			// See: http://laurencescotford.co.uk/?p=347 for details.
 			countCycles += 9;
 		}
+		kb = key;
+
+		if (!isKeyAwaited()) {
+			Opcode opcode = *reinterpret_cast<Opcode *>(const_cast<byte*>(
+				FETCH_OPCODE(pc, OFFSET_PROGRAM_START, memorySize)));
+
+			pc += PROGRAM_COUNTER_STEP;
+			countCycles += (this->*Interpreter::macroCodesLUT[EXTRACT_OP(opcode)]) (opcode);
+
+			++rndSeed;
+		}
 		refreshTimers();
 	}
 
 
+	void Interpreter::reset(const byte *prg, size_t prgLen)
+	{
+		reset_impl();
+
+		byte *clientMemory = memory + pc;
+		size_t countPadded = memorySize - pc;
+
+		if (!!prg) {
+			if (prgLen <= countPadded) {
+				memcpy(clientMemory, prg, prgLen);
+
+				clientMemory += prgLen;
+				countPadded -= prgLen;
+			}
+			else
+			{
+				failState = true;
+			}
+		}
+		if (!failState && countPadded > 0) {
+			memset(clientMemory, 0x00, countPadded);
+		}
+	}
 	void Interpreter::reset(std::istream &prgStream)
 	{
 		reset_impl();
@@ -69,34 +164,6 @@ namespace chip8 {
 		memset(clientMemory, 0x00, size_t(fillExcessLen));
 	}
 
-
-	void Interpreter::setKeyHit(Keyboard key) {
-		if (isKeyAwaited() 
-			// This check allows to trigger this method on each loop pass.
-			// So, simply there's no need to track keyboard hit externally.
-			&& key == KEY_NONE && kb != KEY_NONE) {
-
-			byte keyIdx = 0;
-			while (((kb >> keyIdx) & 0x01) == 0) {
-				++keyIdx;
-			}
-			registers[keyHaltRegister] = keyIdx;
-			keyHaltRegister = KEY_HALT_UNSET;
-
-			// Reset timer sound as it will be overridden by key hit await routine.
-			timers[TIMER_SOUND].value = 0;
-		}
-		kb = key;
-	}
-
-
-	Interpreter::Frame &Interpreter::getFrame() {
-		frameUpdate = false;
-
-		return frame;
-	}
-
-
 	void Interpreter::reset_impl() {
 		flush();
 
@@ -115,6 +182,8 @@ namespace chip8 {
 		index = 0;
 		pc = OFFSET_PROGRAM_START;
 		kb = KEY_NONE;
+
+		failState = false;
 	}
 
 
@@ -157,7 +226,7 @@ namespace chip8 {
 
 
 	inline bool Interpreter::se(size_t idx, word value) {
-		if (registers[idx] == value) {
+		if (READ_REGISTER(idx) == value) {
 			pc += PROGRAM_COUNTER_STEP;
 
 			return true;
@@ -165,7 +234,7 @@ namespace chip8 {
 		return false;
 	}
 	inline bool Interpreter::sne(size_t idx, word value) {
-		if (registers[idx] != value) {
+		if (READ_REGISTER(idx) != value) {
 			pc += PROGRAM_COUNTER_STEP;
 
 			return true;
@@ -173,7 +242,7 @@ namespace chip8 {
 		return false;
 	}
 	inline bool Interpreter::sxye(size_t idx, size_t idy) {
-		if (registers[idx] == registers[idy]) {
+		if (READ_REGISTER(idx) == READ_REGISTER(idy)) {
 			pc += PROGRAM_COUNTER_STEP;
 			
 			return true;
@@ -181,7 +250,7 @@ namespace chip8 {
 		return false;	
 	}
 	inline bool Interpreter::sxyne(size_t idx, size_t idy) {
-		if (registers[idx] != registers[idy]) {
+		if (READ_REGISTER(idx) != READ_REGISTER(idy)) {
 			pc += PROGRAM_COUNTER_STEP;
 			
 			return true;
@@ -189,7 +258,7 @@ namespace chip8 {
 		return false;	
 	}
 	inline bool Interpreter::skbh(size_t idx) {
-		if (!!(kb & (0x01 << registers[idx]))) {
+		if (!!(kb & (0x01 << READ_REGISTER(idx)))) {
 			pc += PROGRAM_COUNTER_STEP;
 			
 			return true;
@@ -197,7 +266,7 @@ namespace chip8 {
 		return false;
 	}
 	inline bool Interpreter::skbnh(size_t idx) {
-		if (!!(kb & (0x01 << registers[idx]))) {
+		if (!!(kb & (0x01 << READ_REGISTER(idx)))) {
 			pc += PROGRAM_COUNTER_STEP;
 			
 			return true;
@@ -212,22 +281,22 @@ namespace chip8 {
 
 
 	inline void Interpreter::movn(size_t idx, word value) {
-		registers[idx] = value;
+		MODIFY_REGISTER(idx, value);
 	}
 	inline void Interpreter::movy(size_t idx, size_t idy) {
-		registers[idx] = registers[idy];
+		MODIFY_REGISTER(idx, READ_REGISTER(idy));
 	}
 	inline void Interpreter::movd(size_t idx) {
-		registers[idx] = timers[TIMER_DELAY].value;
+		MODIFY_REGISTER(idx, timers[TIMER_DELAY].value);
 	}
 	inline void Interpreter::movrs(size_t idx) {
 		for (size_t i = 0; i <= idx; ++i, ++index) {
-			registers[i] = memory[index];
+			MODIFY_REGISTER(i, READ_MEMORY(index));
 		}
 	}
 	inline void Interpreter::movms(size_t idx) {
 		for (size_t i = 0; i <= idx; ++i, ++index) {
-			memory[index] = byte(registers[i]);
+			MODIFY_MEMORY(index, byte(READ_REGISTER(i)));
 		}
 	}
 
@@ -238,7 +307,7 @@ namespace chip8 {
 
 
 	inline size_t Interpreter::bcd(size_t idx) {
-		word value = registers[idx];
+		word value = READ_REGISTER(idx);
 
 		int hundreds = value / 100; 
 		value = value % 100;
@@ -246,40 +315,40 @@ namespace chip8 {
 		int tens = value / 10;
 		int ones = value % 10;
 
-		memory[index    ] = hundreds;
-		memory[index + 1] = tens;
-		memory[index + 2] = ones;
+		MODIFY_MEMORY(index,		hundreds);
+		MODIFY_MEMORY(index + 1U,	tens);
+		MODIFY_MEMORY(index + 2U,	ones);
 
 		return hundreds + tens + ones;
 	}
 
 
 	inline void Interpreter::add(size_t idx, word value) {
-		registers[idx] += value;
+		MODIFY_REGISTER_OP(idx, +=, value);
 	}
 	inline void Interpreter::adi(size_t idx) {
-		index += registers[idx];
+		index += READ_REGISTER(idx);
 	}
 	inline void Interpreter::adc(size_t idx, size_t idy) {
-		word &dst = registers[idx];
+		word &dst = READ_REGISTER(idx);
 
-		dst += registers[idy];
+		dst += READ_REGISTER(idy);
 		carry = !!(dst & ~0xFF) ? 0x01 : 0x00;
 
 		dst &= 0xFF;
 	}
 	inline void Interpreter::sbxyc(size_t idx, size_t idy) {
-		word &dst = registers[idx];
+		word &dst = READ_REGISTER(idx);
 
-		dst -= registers[idy];
+		dst -= READ_REGISTER(idy);
 		carry = !!(dst >> 8) ? 0x00 : 0x01;
 
 		dst &= 0xFF;
 	}
 	inline void Interpreter::sbyxc(size_t idx, size_t idy) {
-		word &dst = registers[idx];
+		word &dst = READ_REGISTER(idx);
 
-		dst = registers[idy] - dst;
+		dst = READ_REGISTER(idy) - dst;
 		carry = !!(dst >> 8) ? 0x00 : 0x01;
 
 		dst &= 0xFF;
@@ -287,38 +356,38 @@ namespace chip8 {
 
 
 	inline void Interpreter::or(size_t idx, size_t idy) {
-		registers[idx] |= registers[idy];
+		MODIFY_REGISTER_OP(idx, |=, READ_REGISTER(idy));
 	}
 	inline void Interpreter::and(size_t idx, size_t idy) {
-		registers[idx] &= registers[idy];
+		MODIFY_REGISTER_OP(idx, &= , READ_REGISTER(idy));
 	}
 	inline void Interpreter::xor(size_t idx, size_t idy) {
-		registers[idx] ^= registers[idy];
+		MODIFY_REGISTER_OP(idx, ^= , READ_REGISTER(idy));
 	}
 
 
 	inline void Interpreter::shr(size_t idx, size_t idy) {
-		word &src = registers[idy];
+		word &src = READ_REGISTER(idy);
 
 		carry = src & 0x01;
 		src = src >> 1;
 
-		registers[idx] = src;
+		MODIFY_REGISTER(idx, src);
 	}
 	inline void Interpreter::shl(size_t idx, size_t idy) {
-		word &src = registers[idy];
+		word &src = READ_REGISTER(idy);
 
 		carry = src >> 7;
 		src = (src << 1) & 0xFF;
 
-		registers[idx] = src;
+		MODIFY_REGISTER(idx, src);
 	}
 
 
 	inline void Interpreter::rnd(size_t idx, word value) {
 		word loSeed = rndSeed + 1 & 0x00FF;
-		word rndBase = memory[pc & 0xFF00 | loSeed];
-		word &dst = registers[idx];
+		word rndBase = READ_MEMORY(pc & 0xFF00U | loSeed);
+		word &dst = READ_REGISTER(idx);
 
 		dst = rndBase + ((rndSeed + 1 & 0xFF00) >> 8) & 0xFF;
 		dst += dst >> 1 | (dst & 0x01) << 7;
@@ -330,11 +399,13 @@ namespace chip8 {
 
 
 	inline void Interpreter::sound(size_t idx) {
-		timers[TIMER_SOUND].value = registers[idx] > 1 ? registers[idx] : 0;
+		word reg = READ_REGISTER(idx);
+
+		timers[TIMER_SOUND].value = reg > 1 ? reg : 0;
 		timers[TIMER_SOUND].timestamp = countCycles + TIMER_TICK_CYCLES;
 	}
 	inline void Interpreter::delay(size_t idx) {
-		timers[TIMER_DELAY].value = registers[idx];
+		timers[TIMER_DELAY].value = READ_REGISTER(idx);
 		timers[TIMER_DELAY].timestamp = countCycles + TIMER_TICK_CYCLES;
 	}
 
@@ -346,7 +417,7 @@ namespace chip8 {
 		frameUpdate = true;
 	}
 	inline void Interpreter::sprite(size_t idx, size_t idy, word value) {
-		size_t x = registers[idx] % FRAME_WIDTH, y = registers[idy] % FRAME_HEIGHT;
+		size_t x = READ_REGISTER(idx) % FRAME_WIDTH, y = READ_REGISTER(idy) % FRAME_HEIGHT;
 		size_t offsetX = FRAME_WIDTH - x;
 
 		if (offsetX < 8) { 
@@ -359,7 +430,7 @@ namespace chip8 {
 
 		for (size_t i = index, imax = index + value; y < FRAME_HEIGHT && i < imax; ++i) {
 			byte *line = frame + x + FRAME_WIDTH * y++;
-			byte stride = memory[i] & (0xFF << offsetX);
+			byte stride = READ_MEMORY(i) & (0xFF << offsetX);
 
 			while (!!stride) {
 				byte &pixel = *line;
@@ -379,7 +450,24 @@ namespace chip8 {
 	}
 
 	inline void Interpreter::sym(size_t idx) {
-		index = registers[idx] * FONT_SYMBOL_HEIGHT;
+		index = READ_REGISTER(idx) * FONT_SYMBOL_HEIGHT;
+	}
+
+
+	// ========================================================
+	// complementary methods
+	// ========================================================
+
+	void Interpreter::push(word value) {
+		size_t idx = --sp;
+
+		MODIFY_STACK(idx, value);
+	}
+
+	word Interpreter::pop() {
+		size_t idx = sp++;
+
+		return READ_STACK(idx);
 	}
 
 

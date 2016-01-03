@@ -13,10 +13,12 @@
 #include <atomic>
 #include <cassert>
 #include <chrono>
+#include <cstdarg>
 #include <exception>
 #include <fstream>
 #include <memory>
 #include <queue>
+#include <sstream>
 #include <thread>
 
 #define WIN23_LEAN_AND_MEAN

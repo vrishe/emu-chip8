@@ -56,8 +56,13 @@ namespace chip8 {
 
 		~Interpreter();
 
+		void doCycle(Keyboard key);
 
-		void doCycle();
+		Frame &getFrame() {
+			frameUpdate = false;
+
+			return frame;
+		}
 
 
 		void reset() {
@@ -68,19 +73,7 @@ namespace chip8 {
 		void reset(const byte(&prg)[Count]) {
 			reset(prg, Count);
 		}
-		void reset(const byte *prg, size_t prgLen) {
-			reset_impl();
-
-			byte *clientMemory = memory + pc;
-
-			if (!!prg) {
-				memcpy(clientMemory, prg, prgLen);
-			}
-			else {
-				memset(clientMemory, 0x00, memorySize - pc);
-			}
-		}
-
+		void reset(const byte *prg, size_t prgLen);
 		void reset(std::istream &prgStream);
 
 
@@ -92,14 +85,13 @@ namespace chip8 {
 			return keyHaltRegister != KEY_HALT_UNSET;
 		}
 
-		void setKeyHit(Keyboard key);
-
-
 		bool isFrameUpdated() const {
 			return frameUpdate;
 		}
 
-		Frame &getFrame();
+		bool isOk() const {
+			return !failState;
+		}
 
 
 	private:
@@ -138,6 +130,9 @@ namespace chip8 {
 
 		const size_t memorySize;
 		byte *memory;
+
+
+		bool failState;
 
 
 		void reset_impl();
@@ -204,13 +199,9 @@ namespace chip8 {
 		// complementary methods
 		// ========================================================
 
-		void push(word value) {
-			stack[--sp] = value;
-		}
+		void push(word value);
 
-		word pop() {
-			return stack[sp++];
-		}
+		word pop();
 
 
 		// ========================================================
