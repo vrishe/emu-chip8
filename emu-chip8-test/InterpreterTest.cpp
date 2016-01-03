@@ -721,7 +721,7 @@ TEST_F(InterpreterTest, OpcodeFXNN_6XNN_ANNN) {
 		interpreter->doCycle();
 		interpreter->doCycle();
 
-		EXPECT_EQ(0x0A, snapshot.getKeyboardValue());
+		EXPECT_EQ(Interpreter::KEY_A, snapshot.getKeyboardValue());
 		interpreter->setKeyHit(Interpreter::KEY_NONE);
 		ASSERT_FALSE(interpreter->isKeyAwaited());
 
@@ -746,6 +746,40 @@ TEST_F(InterpreterTest, OpcodeFXNN_6XNN_ANNN) {
 		EXPECT_EQ(0x2FF, snapshot.getIndexValue());
 
 		EXPECT_EQ(238, snapshot.getCountCycles());
+	}
+	// Opcode FX33 \w 6XNN, 
+	{
+		const byte program[] = { 0x64,0xFF, 0x65,0x7F, 0x66,0x00, 0xA2,0x0E, 0xF4,0x33, 0xF5,0x33, 0xF6,0x33 };
+
+		interpreter->reset(program, sizeof(program));
+
+		interpreter->doCycle();
+		interpreter->doCycle();
+		interpreter->doCycle();
+		EXPECT_EQ(0xFF, snapshot.getRegisterValue(4));
+		EXPECT_EQ(0x7F, snapshot.getRegisterValue(5));
+		EXPECT_EQ(0x00, snapshot.getRegisterValue(6));
+
+		interpreter->doCycle();
+		EXPECT_EQ(0x20E, snapshot.getIndexValue());
+
+		interpreter->doCycle();
+		EXPECT_EQ(0x02, snapshot.getMemoryValue(snapshot.getIndexValue() + 0));
+		EXPECT_EQ(0x05, snapshot.getMemoryValue(snapshot.getIndexValue() + 1));
+		EXPECT_EQ(0x05, snapshot.getMemoryValue(snapshot.getIndexValue() + 2));
+
+		interpreter->doCycle();
+		EXPECT_EQ(0x01, snapshot.getMemoryValue(snapshot.getIndexValue() + 0));
+		EXPECT_EQ(0x02, snapshot.getMemoryValue(snapshot.getIndexValue() + 1));
+		EXPECT_EQ(0x07, snapshot.getMemoryValue(snapshot.getIndexValue() + 2));
+
+		interpreter->doCycle();
+		EXPECT_EQ(0x00, snapshot.getMemoryValue(snapshot.getIndexValue() + 0));
+		EXPECT_EQ(0x00, snapshot.getMemoryValue(snapshot.getIndexValue() + 1));
+		EXPECT_EQ(0x00, snapshot.getMemoryValue(snapshot.getIndexValue() + 2));
+
+		EXPECT_EQ(1110, snapshot.getCountCycles());
+
 	}
 	// Opcode FX65 & FX55 \w 6XNN, ANNN
 	{
