@@ -266,7 +266,7 @@ namespace chip8 {
 		return false;
 	}
 	inline bool Interpreter::skbnh(size_t idx) {
-		if (!!(kb & (0x01 << READ_REGISTER(idx)))) {
+		if (!(kb & (0x01 << READ_REGISTER(idx)))) {
 			pc += PROGRAM_COUNTER_STEP;
 			
 			return true;
