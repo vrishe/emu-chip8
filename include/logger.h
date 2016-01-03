@@ -10,7 +10,7 @@
 #define LOGGER_INIT(Logger)							logger::init(logger::LoggerInitializer<Logger>())
 #define LOGGER_PRINT_EMPTYLN()						logger::printLn()
 #define LOGGER_PRINTL_TEXTLN(text)					logger::printLn(text) 
-#define LOGGER_PRINTL_FORMATTED_TEXTLN(fmt, arg)	logger::printLn(text, arg) 
+#define LOGGER_PRINTL_FORMATTED_TEXTLN(text, arg)	logger::printLn(text, 0, arg) 
 #else
 #define LOGGER_INIT(Logger)
 #define LOGGER_PRINT_EMPTYLN()
@@ -60,8 +60,8 @@ namespace logger {
 	void printLn();
 	//void printLn(const std::string &);
 	//void printLn(const std::wstring &);
-	void printLn(const std::string &format, ...);
-	void printLn(const std::wstring &format, ...);
+	void printLn(const std::string &format, int unused, ...);
+	void printLn(const std::wstring &format, int unused, ...);
 }
 
 #endif // LOGGER_H_

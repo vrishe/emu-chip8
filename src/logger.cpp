@@ -34,22 +34,22 @@ namespace logger {
 	//		loggerLocal->printLn(text);
 	//	}
 	//}
-	void printLn(const std::string &text, ...) {
+	void printLn(const std::string &text, int unused, ...) {
 		auto loggerLocal = logger.get();
 
 		if (!!loggerLocal) {
 			va_list args;
-			va_start(args, text);
+			va_start(args, unused);
 			loggerLocal->printLn(text, args);
 			va_end(args);
 		}
 	}
-	void printLn(const std::wstring &text, ...) {
+	void printLn(const std::wstring &text, int unused, ...) {
 		auto loggerLocal = logger.get();
 
 		if (!!loggerLocal) {
 			va_list args;
-			va_start(args, text);
+			va_start(args, unused);
 			loggerLocal->printLn(text, args);
 			va_end(args);
 		}

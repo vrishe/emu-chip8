@@ -1,15 +1,7 @@
 #include "stdafx.h"
 
 #include "interpretation.h"
-
-#ifdef _DEBUG
-#include "string.h"
-
-#define DEBUG_WRITE_LINE(fmt, ...) \
-	OutputDebugString(string::format(_T(fmt), __VA_ARGS__).c_str())
-#else
-#define DEBUG_WRITE_LINE(fmt, ...)
-#endif // _DEBUG
+#include "logger.h"
 
 
 void InterpretationThread::run() {
@@ -34,7 +26,7 @@ void InterpretationThread::run() {
 				waitFrameUpdate = true;
 
 				PostMessage(hwndOwner, WM_USER_INTERPRETATION, 0, (LPARAM)this);
-				DEBUG_WRITE_LINE("Frame update posted @ %d", snapshot.getCountCycles());
+				LOGGER_PRINTL_FORMATTED_TEXTLN("Frame update posted @ %d", snapshot.getCountCycles());
 			}
 			else if (interpreter->isOk()) {
 				interpreter->doCycle(keyMapper->mapKey());
