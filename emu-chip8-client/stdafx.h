@@ -12,6 +12,7 @@
 
 #include <atomic>
 #include <cassert>
+#include <chrono>
 #include <exception>
 #include <fstream>
 #include <memory>

@@ -21,21 +21,21 @@ public:
 		USHORT result = kbstate, reference = result;
 
 		switch (vk) {
-		case '1': result = fDown ? (result | chip8::Interpreter::KEY_0) : (result & ~chip8::Interpreter::KEY_0);  break;
-		case '2': result = fDown ? (result | chip8::Interpreter::KEY_1) : (result & ~chip8::Interpreter::KEY_1);  break;
-		case '3': result = fDown ? (result | chip8::Interpreter::KEY_2) : (result & ~chip8::Interpreter::KEY_2);  break;
-		case '4': result = fDown ? (result | chip8::Interpreter::KEY_3) : (result & ~chip8::Interpreter::KEY_3);  break;
+		case 'X': result = fDown ? (result | chip8::Interpreter::KEY_0) : (result & ~chip8::Interpreter::KEY_0);  break;
+		case '1': result = fDown ? (result | chip8::Interpreter::KEY_1) : (result & ~chip8::Interpreter::KEY_1);  break;
+		case '2': result = fDown ? (result | chip8::Interpreter::KEY_2) : (result & ~chip8::Interpreter::KEY_2);  break;
+		case '3': result = fDown ? (result | chip8::Interpreter::KEY_3) : (result & ~chip8::Interpreter::KEY_3);  break;
 		case 'Q': result = fDown ? (result | chip8::Interpreter::KEY_4) : (result & ~chip8::Interpreter::KEY_4);  break;
 		case 'W': result = fDown ? (result | chip8::Interpreter::KEY_5) : (result & ~chip8::Interpreter::KEY_5);  break;
 		case 'E': result = fDown ? (result | chip8::Interpreter::KEY_6) : (result & ~chip8::Interpreter::KEY_6);  break;
-		case 'R': result = fDown ? (result | chip8::Interpreter::KEY_7) : (result & ~chip8::Interpreter::KEY_7);  break;
-		case 'A': result = fDown ? (result | chip8::Interpreter::KEY_8) : (result & ~chip8::Interpreter::KEY_8);  break;
-		case 'S': result = fDown ? (result | chip8::Interpreter::KEY_9) : (result & ~chip8::Interpreter::KEY_9);  break;
-		case 'D': result = fDown ? (result | chip8::Interpreter::KEY_A) : (result & ~chip8::Interpreter::KEY_A);  break;
-		case 'F': result = fDown ? (result | chip8::Interpreter::KEY_B) : (result & ~chip8::Interpreter::KEY_B);  break;
-		case 'Z': result = fDown ? (result | chip8::Interpreter::KEY_C) : (result & ~chip8::Interpreter::KEY_C);  break;
-		case 'X': result = fDown ? (result | chip8::Interpreter::KEY_D) : (result & ~chip8::Interpreter::KEY_D);  break;
-		case 'C': result = fDown ? (result | chip8::Interpreter::KEY_E) : (result & ~chip8::Interpreter::KEY_E);  break;
+		case 'A': result = fDown ? (result | chip8::Interpreter::KEY_7) : (result & ~chip8::Interpreter::KEY_7);  break;
+		case 'S': result = fDown ? (result | chip8::Interpreter::KEY_8) : (result & ~chip8::Interpreter::KEY_8);  break;
+		case 'D': result = fDown ? (result | chip8::Interpreter::KEY_9) : (result & ~chip8::Interpreter::KEY_9);  break;
+		case 'Z': result = fDown ? (result | chip8::Interpreter::KEY_A) : (result & ~chip8::Interpreter::KEY_A);  break;
+		case 'C': result = fDown ? (result | chip8::Interpreter::KEY_B) : (result & ~chip8::Interpreter::KEY_B);  break;
+		case '4': result = fDown ? (result | chip8::Interpreter::KEY_C) : (result & ~chip8::Interpreter::KEY_C);  break;
+		case 'R': result = fDown ? (result | chip8::Interpreter::KEY_D) : (result & ~chip8::Interpreter::KEY_D);  break;
+		case 'F': result = fDown ? (result | chip8::Interpreter::KEY_E) : (result & ~chip8::Interpreter::KEY_E);  break;
 		case 'V': result = fDown ? (result | chip8::Interpreter::KEY_F) : (result & ~chip8::Interpreter::KEY_F);  break;
 		}
 		if (result != reference) {
@@ -253,13 +253,15 @@ static BOOL Chip8DisplayCreate(HWND hWnd, LPCREATESTRUCT lpCreateStruct) {
 	}
 	ASSIGN_DISPLAY_EXTRA(hWnd, extra);
 
+	wglSwapIntervalEXT(1);
+
 	return TRUE;
 }
 
 static VOID Chip8DisplayDestroy(HWND hWnd) {
-	auto extra = OBTAIN_DISPLAY_EXTRA(hWnd);
+	wglSwapIntervalEXT(0);
 
-	if (!!extra)
+	auto extra = OBTAIN_DISPLAY_EXTRA(hWnd);
 	{
 		DestroyGLScene(extra);
 		DestroyGLContext(extra);
@@ -267,10 +269,32 @@ static VOID Chip8DisplayDestroy(HWND hWnd) {
 		ReleaseDC(hWnd, extra->hDC);
 		delete extra->interpreter;
 		delete extra;
-
-		ASSIGN_DISPLAY_EXTRA(hWnd, NULL);
 	}
 	PostQuitMessage(0);
+}
+
+
+static UINT frames;
+static ULONGLONG timeLastFrame;
+static RECT counterTextRect = {
+	2, 2, 95, 25
+};
+
+static void UpdateFrameRateCounter() {
+	ULONGLONG timeCurrent = GetTickCount64();
+	FLOAT timeDifference = timeCurrent - timeLastFrame;
+
+	if (timeDifference >= 1000) {
+		TCHAR output[13] = { 0 };
+		FLOAT fps = min((frames * 1000) / timeDifference, 999.0f);
+
+		_stprintf_s(output, _T("FPS: %3.2f\n"), fps);
+		OutputDebugString(output);
+		
+		timeLastFrame = timeCurrent;
+		frames = 0;
+	}
+	++frames;
 }
 
 static VOID Chip8DisplayPaint(HWND hWnd) {
@@ -282,6 +306,8 @@ static VOID Chip8DisplayPaint(HWND hWnd) {
 
 		DrawGLScene(extra);
 		SwapBuffers(extra->hDC);
+
+		UpdateFrameRateCounter();
 	}
 	EndPaint(hWnd, &ps);
 }
@@ -361,7 +387,7 @@ static void Chip8DisplayUserInterpretation(HWND hWnd, InterpretationThread *inte
 	}
 	interpreter->endFrameUpdate();
 
-	InvalidateRect(hWnd, NULL, TRUE);
+	InvalidateRect(hWnd, NULL, FALSE);
 }
 
 static LRESULT CALLBACK Chip8DisplayWndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam) {
