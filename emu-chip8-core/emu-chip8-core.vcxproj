@@ -13,10 +13,11 @@
   <ItemGroup>
     <ClInclude Include="..\include\chip8\Chip8Base.h" />
     <ClInclude Include="..\include\chip8\Chip8Interpreter.h" />
-    <ClInclude Include="..\include\chip8\Chip8Timer.h" />
+    <ClInclude Include="..\include\logger.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\src\Chip8Interpreter.cpp" />
+    <ClCompile Include="..\src\logger.cpp" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{FC5BB8B9-41C9-404D-AD4A-20ADAED19FF7}</ProjectGuid>

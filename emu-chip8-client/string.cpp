@@ -6,9 +6,19 @@
 namespace string {
 
 	std::_tstring format(const _TCHAR *fmt, ...) {
+		std::_tstring result;
 
 		va_list args;
 		va_start(args, fmt);
+
+		result = std::move(format(fmt, args));
+
+		va_end(args);
+
+		return result;
+	}
+
+	std::_tstring format(const _TCHAR *fmt, va_list args) {
 
 #ifdef _MSC_VER
 
@@ -54,8 +64,6 @@ namespace string {
 		static_assert("Non-Windows environment is not supported yet.");
 
 #endif // _MSC_VER
-
-		va_end(args);
 
 #ifdef _HAS_CPP0X
 		result.shrink_to_fit();

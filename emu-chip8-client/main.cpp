@@ -120,7 +120,7 @@ static void CreateGLContext(Chip8DisplayExtra *extra) {
 			0,
 			0, 0, 0, 0,
 			24,															//Number of bits for the depthbuffer
-			8,															//Number of bits for the stencilbuffer
+			0,															//Number of bits for the stencilbuffer
 			0,															//Number of Aux buffers in the framebuffer.
 			PFD_MAIN_PLANE,
 			0,
@@ -528,7 +528,7 @@ int APIENTRY _tWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstanc
 		dwReturnError = dwLastError;
 	}
 	ApplicationInstance::Release(ApplicationUninitialization);
-
+	
 	return (int)dwReturnError;
 }
 
@@ -584,6 +584,7 @@ namespace ApplicationInstance {
 		// Store instance handle in our global variable
 		hInstanceCurrent = hInstance;
 
+		LOGGER_INIT(WindowsLogger);
 		if (lpInitFunc != NULL) {
 			DWORD dwLastError = lpInitFunc(hInstance, nCmdShow);
 			if (dwLastError != ERROR_SUCCESS)

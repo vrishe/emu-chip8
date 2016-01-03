@@ -39,6 +39,7 @@ namespace string {
 
 
 	std::_tstring format(const _TCHAR *fmt, ...);
+	std::_tstring format(const _TCHAR *fmt, va_list args);
 
 } // namespace string
 

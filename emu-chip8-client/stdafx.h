@@ -13,6 +13,7 @@
 #include <atomic>
 #include <cassert>
 #include <chrono>
+#include <codecvt>
 #include <cstdarg>
 #include <exception>
 #include <fstream>
@@ -31,3 +32,4 @@
 #include <gl/GLU.h>
 
 #include "unicode.h"
+#include "string.h"

@@ -1,6 +1,9 @@
 #include "chip8/Chip8Interpreter.h"
 
+#include "logger.h"
+
 #include <cassert>
+
 
 namespace chip8 {
 
@@ -192,6 +195,14 @@ namespace chip8 {
 	void Interpreter::refreshTimers() {
 		onTick(TIMER_DELAY);
 		onTick(TIMER_SOUND);
+
+		static int tickCount = 0;
+
+		if (--tickCount <= 0) {
+			LOGGER_PRINTL_TEXTLN("refreshTimers called!");
+
+			tickCount = 60;
+		}
 	}
 
 	void Interpreter::onTick(word timerId) {
