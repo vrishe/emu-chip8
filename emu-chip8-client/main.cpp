@@ -357,16 +357,40 @@ static VOID Chip8DisplayCommand(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify
 				ofn.lpstrFile = new TCHAR[ofn.nMaxFile + 1];
 				ofn.lpstrFile[0] = _T('\0');
 			}
+			auto needPause = !extra->interpreter->isPaused();
+
+			if (needPause) {
+				extra->interpreter->pause();
+			}
 			if (GetOpenFileName(&ofn)) {
 				extra->interpreter->start(ofn.lpstrFile);
 			}
+			else if (needPause) {
+				extra->interpreter->pause();
+			}
 			delete[] ofn.lpstrFile;
 
+			HMENU hMenu = GetMenu(hWnd);
+			{
+				EnableMenuItem(hMenu, ID_FILE_RESET, MF_ENABLED);
+				EnableMenuItem(hMenu, ID_FILE_PAUSE, MF_ENABLED);
+			}
+			CheckMenuItem(hMenu, ID_FILE_PAUSE, MF_UNCHECKED);
 			break;
 		}
 		case ID_FILE_RESET:
 			extra->interpreter->reset();
+
+			CheckMenuItem(GetMenu(hWnd), ID_FILE_PAUSE, MF_UNCHECKED);
 			break;
+		case ID_FILE_PAUSE:
+		{
+			extra->interpreter->pause();
+
+			CheckMenuItem(GetMenu(hWnd), ID_FILE_PAUSE, 
+				extra->interpreter->isPaused() ? MF_CHECKED : MF_UNCHECKED);
+			break;
+		}
 		case ID_FILE_EXIT:
 			extra->interpreter->stop();
 			DestroyWindow(hWnd);

@@ -64,8 +64,10 @@ namespace chip8 {
 	MODIFY_ARRAY_OP(registers, idx, op, value, 0U, Interpreter::REGISTERS_COUNT)
 #define MODIFY_REGISTER(idx, value) \
 	MODIFY_ARRAY_OP(registers, idx, =, value, 0U, Interpreter::REGISTERS_COUNT)
-#define READ_REGISTER(idx) \
+#define READ_REGISTER_RAW(idx) \
 	READ_ARRAY(registers, idx, 0, Interpreter::REGISTERS_COUNT)
+#define READ_REGISTER(idx) \
+	byte(READ_REGISTER_RAW(idx))
 
 #define MODIFY_MEMORY_OP(idx, op, value) \
 	MODIFY_ARRAY_OP(memory, idx, op, value, Interpreter::OFFSET_PROGRAM_START, memorySize)
@@ -170,6 +172,9 @@ namespace chip8 {
 	void Interpreter::reset_impl() {
 		flush();
 
+		memset(stack, 0x00, sizeof(stack));
+		memset(registers, 0x00, sizeof(registers));
+
 		timers[TIMER_DELAY].value = 0;
 		timers[TIMER_DELAY].timestamp = TIMESTAMP_UNDEFINED;
 
@@ -202,13 +207,11 @@ namespace chip8 {
 
 		if (timer.value > 0 && countCycles >= timer.timestamp) {
 			size_t difference = (countCycles - timer.timestamp);
+			size_t diffDiv = difference / TIMER_TICK_CYCLES;
+			size_t diffMod = difference % TIMER_TICK_CYCLES;
 
-			timer.value -= difference / TIMER_TICK_CYCLES + 1;
-			timer.timestamp = countCycles + TIMER_TICK_CYCLES - difference % TIMER_TICK_CYCLES;
-
-			if (timer.value <= 0) {
-				LOGGER_PRINTL_FORMATTED_TEXTLN("refreshTimers called for timer: %d!", timerId);
-			}
+			timer.value -= diffDiv > 1 ? diffDiv : 1;
+			timer.timestamp = countCycles - diffMod + TIMER_TICK_CYCLES;
 		}
 	}
 
@@ -337,7 +340,7 @@ namespace chip8 {
 		index += READ_REGISTER(idx);
 	}
 	inline void Interpreter::adc(size_t idx, size_t idy) {
-		word &dst = READ_REGISTER(idx);
+		word &dst = READ_REGISTER_RAW(idx);
 
 		dst += READ_REGISTER(idy);
 		carry = !!(dst & ~0xFF) ? 0x01 : 0x00;
@@ -345,7 +348,7 @@ namespace chip8 {
 		dst &= 0xFF;
 	}
 	inline void Interpreter::sbxyc(size_t idx, size_t idy) {
-		word &dst = READ_REGISTER(idx);
+		word &dst = READ_REGISTER_RAW(idx);
 
 		dst -= READ_REGISTER(idy);
 		carry = !!(dst >> 8) ? 0x00 : 0x01;
@@ -353,7 +356,7 @@ namespace chip8 {
 		dst &= 0xFF;
 	}
 	inline void Interpreter::sbyxc(size_t idx, size_t idy) {
-		word &dst = READ_REGISTER(idx);
+		word &dst = READ_REGISTER_RAW(idx);
 
 		dst = READ_REGISTER(idy) - dst;
 		carry = !!(dst >> 8) ? 0x00 : 0x01;
@@ -374,7 +377,7 @@ namespace chip8 {
 
 
 	inline void Interpreter::shr(size_t idx, size_t idy) {
-		word &src = READ_REGISTER(idy);
+		word &src = READ_REGISTER_RAW(idy);
 
 		carry = src & 0x01;
 		src = src >> 1;
@@ -382,7 +385,7 @@ namespace chip8 {
 		MODIFY_REGISTER(idx, src);
 	}
 	inline void Interpreter::shl(size_t idx, size_t idy) {
-		word &src = READ_REGISTER(idy);
+		word &src = READ_REGISTER_RAW(idy);
 
 		carry = src >> 7;
 		src = (src << 1) & 0xFF;
@@ -394,7 +397,7 @@ namespace chip8 {
 	inline void Interpreter::rnd(size_t idx, word value) {
 		word loSeed = rndSeed + 1 & 0x00FF;
 		word rndBase = READ_MEMORY(pc & 0xFF00U | loSeed);
-		word &dst = READ_REGISTER(idx);
+		word &dst = READ_REGISTER_RAW(idx);
 
 		dst = rndBase + ((rndSeed + 1 & 0xFF00) >> 8) & 0xFF;
 		dst += dst >> 1 | (dst & 0x01) << 7;
@@ -506,6 +509,14 @@ namespace chip8 {
 			ret();
 			return COUNT_CYCLES_TAKEN_BY_GROUP0(10);
 
+		default:
+			word address = EXTRACT_VAL3(opcode);
+
+			if (address >= OFFSET_PROGRAM_START) {
+				// It is strange, but some programs seem to use 0NNN
+				// as a 2NNN 'call' command.
+				return op2(opcode);
+			}
 			// All other machine instructions are ignored.
 			// TODO: define machine instructions precessing here.
 		}

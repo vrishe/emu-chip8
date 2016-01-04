@@ -1,8 +1,10 @@
 #include "stdafx.h"
 
 #include "interpretation.h"
-#include "logger.h"
 
+
+__declspec(thread)
+bool Mutex::acquired = false;
 
 void InterpretationThread::run() {
 	for (;;) {
@@ -22,17 +24,23 @@ void InterpretationThread::run() {
 			task.reset();
 		}
 		if (!waitFrameUpdate) {
-			if (interpreter->isFrameUpdated()) {
-				waitFrameUpdate = true;
+			if (interpreter->isOk()) {
+				if (interpreter->isFrameUpdated()) {
+					waitFrameUpdate = true;
 
-				PostMessage(hwndOwner, WM_USER_INTERPRETATION, 0, (LPARAM)this);
-				LOGGER_PRINTL_FORMATTED_TEXTLN("Frame update posted @ %d", snapshot.getCountCycles());
-			}
-			else if (interpreter->isOk()) {
-				interpreter->doCycle(keyMapper->mapKey());
+					PostMessage(hwndOwner, WM_USER_INTERPRETATION, 0, (LPARAM)this);
+				}
+				else {
+					interpreter->doCycle(keyMapper->mapKey());
+				}
 			}
 		}
 	}
+}
+
+
+bool InterpretationThread::isPaused() const {
+	return tasksMutex;
 }
 
 
@@ -97,6 +105,15 @@ void InterpretationThread::reset() {
 		{
 			tasks.push(std::shared_ptr<ITask>(new ResetTask(this)));
 		}
+		tasksMutex.release();
+	}
+}
+
+void InterpretationThread::pause() {
+	if (!tasksMutex) {
+		tasksMutex.acquire();
+	}
+	else {
 		tasksMutex.release();
 	}
 }

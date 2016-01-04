@@ -14,6 +14,9 @@ public:
 class Mutex {
 	CRITICAL_SECTION criticalSection;
 
+	__declspec( thread )
+	static bool acquired;
+
 public:
 	Mutex() {
 		InitializeCriticalSection(&criticalSection);
@@ -22,11 +25,21 @@ public:
 		DeleteCriticalSection(&criticalSection);
 	}
 
+	operator bool() const {
+		return acquired;
+	}
+
 	void acquire() {
-		EnterCriticalSection(&criticalSection);
+		if (!acquired) {
+			EnterCriticalSection(&criticalSection);
+			acquired = true;
+		}
 	}
 	void release() {
-		LeaveCriticalSection(&criticalSection);
+		if (acquired) {
+			acquired = false;
+			LeaveCriticalSection(&criticalSection);
+		}
 	}
 };
 
@@ -77,8 +90,11 @@ public:
 	}
 
 
+	bool isPaused() const;
+
 	void start(LPCTSTR filePath);
 	void reset();
+	void pause();
 	void stop();
 
 	const chip8::Interpreter::Frame &beginFrameUpdate();
