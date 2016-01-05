@@ -274,11 +274,11 @@ TEST_F(InterpreterTest, Opcode7XNN_6XNN_1NNN) {
 
 	interpreter->doCycle(Interpreter::KEY_NONE);
 	interpreter->doCycle(Interpreter::KEY_NONE);
-	EXPECT_EQ(0x100, snapshot.getRegisterValue(10));
+	EXPECT_EQ(0x00, snapshot.getRegisterValue(10));
 	EXPECT_EQ(0x00, snapshot.getRegisterValue(11));
 
 	interpreter->doCycle(Interpreter::KEY_NONE);
-	EXPECT_EQ(0x100, snapshot.getRegisterValue(10));
+	EXPECT_EQ(0x00, snapshot.getRegisterValue(10));
 	EXPECT_EQ(Interpreter::OFFSET_PROGRAM_START, snapshot.getProgramCounterValue());
 
 	EXPECT_EQ(312, snapshot.getCountCycles());
@@ -432,7 +432,7 @@ TEST_F(InterpreterTest, Opcode8XYN_6XNN) {
 		EXPECT_EQ(0x02, snapshot.getRegisterValue(13));
 
 		interpreter->doCycle(Interpreter::KEY_NONE);
-		EXPECT_EQ(0x01, snapshot.getRegisterValue(13));
+		EXPECT_EQ(0x02, snapshot.getRegisterValue(13));
 		EXPECT_EQ(0x01, snapshot.getRegisterValue(3));
 		EXPECT_EQ(0x00, snapshot.getCarryValue());
 
@@ -448,7 +448,7 @@ TEST_F(InterpreterTest, Opcode8XYN_6XNN) {
 		EXPECT_EQ(0x05, snapshot.getRegisterValue(13));
 
 		interpreter->doCycle(Interpreter::KEY_NONE);
-		EXPECT_EQ(0x02, snapshot.getRegisterValue(13));
+		EXPECT_EQ(0x05, snapshot.getRegisterValue(13));
 		EXPECT_EQ(0x02, snapshot.getRegisterValue(3));
 		EXPECT_EQ(0x01, snapshot.getCarryValue());
 
@@ -500,7 +500,7 @@ TEST_F(InterpreterTest, Opcode8XYN_6XNN) {
 		EXPECT_EQ(0x40, snapshot.getRegisterValue(13));
 
 		interpreter->doCycle(Interpreter::KEY_NONE);
-		EXPECT_EQ(0x80, snapshot.getRegisterValue(13));
+		EXPECT_EQ(0x40, snapshot.getRegisterValue(13));
 		EXPECT_EQ(0x80, snapshot.getRegisterValue(3));
 		EXPECT_EQ(0x00, snapshot.getCarryValue());
 
@@ -516,7 +516,7 @@ TEST_F(InterpreterTest, Opcode8XYN_6XNN) {
 		EXPECT_EQ(0xA0, snapshot.getRegisterValue(13));
 
 		interpreter->doCycle(Interpreter::KEY_NONE);
-		EXPECT_EQ(0x40, snapshot.getRegisterValue(13));
+		EXPECT_EQ(0xA0, snapshot.getRegisterValue(13));
 		EXPECT_EQ(0x40, snapshot.getRegisterValue(3));
 		EXPECT_EQ(0x01, snapshot.getCarryValue());
 
@@ -820,6 +820,7 @@ TEST_F(InterpreterTest, OpcodeFXNN_6XNN_ANNN) {
 		EXPECT_EQ(0x55, snapshot.getRegisterValue(13));
 		EXPECT_EQ(0xFF, snapshot.getRegisterValue(14));
 		EXPECT_EQ(0x55, snapshot.getRegisterValue(15));
+		EXPECT_EQ(0x212, snapshot.getIndexValue());
 
 		interpreter->doCycle(Interpreter::KEY_NONE);	EXPECT_EQ(0x00, snapshot.getRegisterValue( 0));
 		interpreter->doCycle(Interpreter::KEY_NONE); EXPECT_EQ(0x01, snapshot.getRegisterValue( 1));
@@ -858,6 +859,7 @@ TEST_F(InterpreterTest, OpcodeFXNN_6XNN_ANNN) {
 		EXPECT_EQ(snapshot.getMemoryValue(Interpreter::OFFSET_PROGRAM_START + 15), snapshot.getRegisterValue(13));
 		EXPECT_EQ(snapshot.getMemoryValue(Interpreter::OFFSET_PROGRAM_START + 16), snapshot.getRegisterValue(14));
 		EXPECT_EQ(snapshot.getMemoryValue(Interpreter::OFFSET_PROGRAM_START + 17), snapshot.getRegisterValue(15));
+		EXPECT_EQ(0x212, snapshot.getIndexValue());
 
 		EXPECT_EQ(2044, snapshot.getCountCycles());
 	}

@@ -64,10 +64,8 @@ namespace chip8 {
 	MODIFY_ARRAY_OP(registers, idx, op, value, 0U, Interpreter::REGISTERS_COUNT)
 #define MODIFY_REGISTER(idx, value) \
 	MODIFY_ARRAY_OP(registers, idx, =, value, 0U, Interpreter::REGISTERS_COUNT)
-#define READ_REGISTER_RAW(idx) \
-	READ_ARRAY(registers, idx, 0, Interpreter::REGISTERS_COUNT)
 #define READ_REGISTER(idx) \
-	byte(READ_REGISTER_RAW(idx))
+	READ_ARRAY(registers, idx, 0, Interpreter::REGISTERS_COUNT)
 
 #define MODIFY_MEMORY_OP(idx, op, value) \
 	MODIFY_ARRAY_OP(memory, idx, op, value, Interpreter::OFFSET_PROGRAM_START, memorySize)
@@ -340,28 +338,25 @@ namespace chip8 {
 		index += READ_REGISTER(idx);
 	}
 	inline void Interpreter::adc(size_t idx, size_t idy) {
-		word &dst = READ_REGISTER_RAW(idx);
+		byte &dst = READ_REGISTER(idx);
+		word result = dst + READ_REGISTER(idy);
 
-		dst += READ_REGISTER(idy);
-		carry = !!(dst & ~0xFF) ? 0x01 : 0x00;
-
-		dst &= 0xFF;
+		dst = byte(result);
+		carry = !!(result >> 8) ? 0x01 : 0x00;
 	}
 	inline void Interpreter::sbxyc(size_t idx, size_t idy) {
-		word &dst = READ_REGISTER_RAW(idx);
+		byte &dst = READ_REGISTER(idx);
+		word result = dst - READ_REGISTER(idy);
 
-		dst -= READ_REGISTER(idy);
-		carry = !!(dst >> 8) ? 0x00 : 0x01;
-
-		dst &= 0xFF;
+		dst = byte(result);
+		carry = !!(result >> 8) ? 0x00 : 0x01;
 	}
 	inline void Interpreter::sbyxc(size_t idx, size_t idy) {
-		word &dst = READ_REGISTER_RAW(idx);
+		byte &dst = READ_REGISTER(idx);
+		word result = READ_REGISTER(idy) - dst;
 
-		dst = READ_REGISTER(idy) - dst;
-		carry = !!(dst >> 8) ? 0x00 : 0x01;
-
-		dst &= 0xFF;
+		dst = byte(result);
+		carry = !!(result >> 8) ? 0x00 : 0x01;
 	}
 
 
@@ -377,34 +372,29 @@ namespace chip8 {
 
 
 	inline void Interpreter::shr(size_t idx, size_t idy) {
-		word &src = READ_REGISTER_RAW(idy);
+		byte value = READ_REGISTER(idy);
 
-		carry = src & 0x01;
-		src = src >> 1;
-
-		MODIFY_REGISTER(idx, src);
+		MODIFY_REGISTER(idx, value >> 1);
+		carry = value & 0x01;
 	}
 	inline void Interpreter::shl(size_t idx, size_t idy) {
-		word &src = READ_REGISTER_RAW(idy);
+		byte value = READ_REGISTER(idy);
 
-		carry = src >> 7;
-		src = (src << 1) & 0xFF;
-
-		MODIFY_REGISTER(idx, src);
+		MODIFY_REGISTER(idx, value << 1);
+		carry = value >> 7;
 	}
 
 
 	inline void Interpreter::rnd(size_t idx, word value) {
 		word loSeed = rndSeed + 1 & 0x00FF;
-		word rndBase = READ_MEMORY(pc & 0xFF00U | loSeed);
-		word &dst = READ_REGISTER_RAW(idx);
+		word result = READ_MEMORY(pc & 0xFF00U | loSeed);
+		{	
+			result = result + ((rndSeed + 1 & 0xFF00) >> 8) & 0xFF;
+			result += result >> 1 | (result & 0x01) << 7;
+		}
+		rndSeed = ((result & 0xFF) << 8) | loSeed;
 
-		dst = rndBase + ((rndSeed + 1 & 0xFF00) >> 8) & 0xFF;
-		dst += dst >> 1 | (dst & 0x01) << 7;
-
-		rndSeed = ((dst & 0xFF) << 8) | loSeed;
-
-		dst &= value;
+		MODIFY_REGISTER(idx, byte(result & value));
 	}
 
 

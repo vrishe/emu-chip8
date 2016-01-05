@@ -115,7 +115,7 @@ namespace chip8 {
 		size_t sp;
 		size_t keyHaltRegister;
 
-		word &carry;
+		byte &carry;
 		word index;
 		word pc;
 		word kb;
@@ -123,7 +123,7 @@ namespace chip8 {
 		word rndSeed;
 		
 		word stack[STACK_DEPTH];
-		word registers[REGISTERS_COUNT];
+		byte registers[REGISTERS_COUNT];
 
 		Frame frame;
 		bool frameUpdate;
