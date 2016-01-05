@@ -289,7 +289,7 @@ namespace chip8 {
 
 
 	inline void Interpreter::movn(size_t idx, word value) {
-		MODIFY_REGISTER(idx, value);
+		MODIFY_REGISTER(idx, byte(value));
 	}
 	inline void Interpreter::movy(size_t idx, size_t idy) {
 		MODIFY_REGISTER(idx, READ_REGISTER(idy));
@@ -304,7 +304,7 @@ namespace chip8 {
 	}
 	inline void Interpreter::movms(size_t idx) {
 		for (size_t i = 0; i <= idx; ++i, ++index) {
-			MODIFY_MEMORY(index, byte(READ_REGISTER(i)));
+			MODIFY_MEMORY(index, READ_REGISTER(i));
 		}
 	}
 
@@ -499,14 +499,14 @@ namespace chip8 {
 			ret();
 			return COUNT_CYCLES_TAKEN_BY_GROUP0(10);
 
-		default:
-			word address = EXTRACT_VAL3(opcode);
+		//default:
+			//word address = EXTRACT_VAL3(opcode);
 
-			if (address >= OFFSET_PROGRAM_START) {
-				// It is strange, but some programs seem to use 0NNN
-				// as a 2NNN 'call' command.
-				return op2(opcode);
-			}
+			//if (address >= OFFSET_PROGRAM_START) {
+			//	// It is strange, but some programs seem to use 0NNN
+			//	// as a 2NNN 'call' command.
+			//	return op2(opcode);
+			//}
 			// All other machine instructions are ignored.
 			// TODO: define machine instructions precessing here.
 		}

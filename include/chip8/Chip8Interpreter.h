@@ -106,7 +106,7 @@ namespace chip8 {
 		struct countdown_timer {
 			size_t timestamp;
 
-			word value;
+			byte value;
 		};
 
 		countdown_timer timers[2];
