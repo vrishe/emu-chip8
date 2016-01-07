@@ -17,18 +17,37 @@ namespace chip8 {
 		/* C */ 0xF0, 0x80, 0x80, 0x80, 0xF0,  /* D */ 0xE0, 0x90, 0x90, 0x90, 0xE0,  /* E */ 0xF0, 0x80, 0xF0, 0x80, 0xF0,  /* F */ 0xF0, 0x80, 0xF0, 0x80, 0x80
 	};
 
-	Interpreter::Interpreter(size_t memorySize)
-		: memorySize(memorySize), carry(registers[REGISTERS_COUNT - 1]), rndSeed(reinterpret_cast<word>(this)) {
+	Interpreter::Interpreter(word aluProfile, size_t memorySize)
+		: aluProfile(aluProfile), memorySize(memorySize), carry(registers[REGISTERS_COUNT - 1]) {
+
+		applyALUProfile(aluProfile);
 
 		memory = new byte[memorySize];
 		memcpy(memory, font, sizeof(font));
 
+		rndSeed = reinterpret_cast<word>(this);
 		reset(nullptr, -1);
 	}
 
 	Interpreter::~Interpreter() {
 		delete[] memory;
 	}
+
+
+	void Interpreter::applyALUProfile(word aluProfile) {
+		switch (aluProfile) {
+		case ALU_PROFILE_MODERN:
+			shl = &Interpreter::shl_modern;
+			shr = &Interpreter::shr_modern;
+			break;
+
+		case ALU_PROFILE_ORIGINAL:
+			shl = &Interpreter::shl_original;
+			shr = &Interpreter::shr_original;
+			break;
+		}
+	}
+
 
 #ifdef _DEBUG
 #define MODIFY_ARRAY_OP(arr, idx, op, value, lower, higher)	\
@@ -337,6 +356,10 @@ namespace chip8 {
 	inline void Interpreter::adi(size_t idx) {
 		index += READ_REGISTER(idx);
 	}
+
+	// As per: http://laurencescotford.co.uk/?p=266
+	// carry flag is being assigned the last. This mean that is you
+	// use REG F as output, the result will be overwritten by a status flag.
 	inline void Interpreter::adc(size_t idx, size_t idy) {
 		byte &dst = READ_REGISTER(idx);
 		word result = dst + READ_REGISTER(idy);
@@ -370,14 +393,38 @@ namespace chip8 {
 		MODIFY_REGISTER_OP(idx, ^= , READ_REGISTER(idy));
 	}
 
+	// As per: http://laurencescotford.co.uk/?p=266
+	// carry flag is being assigned the last. This mean that is you
+	// use REG F as output, the result will be overwritten by a status flag.
+	void Interpreter::shr_modern(size_t idx, size_t idy) {
+		//byte value = READ_REGISTER(idy);
+		//
+		//MODIFY_REGISTER(idx, value >> 1);
+		//carry = value & 0x01;
+		byte &dst = READ_REGISTER(idx);
+		byte flag = dst & 0x01;
 
-	inline void Interpreter::shr(size_t idx, size_t idy) {
+		dst >>= 1;
+		carry = flag;
+	}
+	void Interpreter::shl_modern(size_t idx, size_t idy) {
+		//byte value = READ_REGISTER(idy);
+
+		//MODIFY_REGISTER(idx, value << 1);
+		//carry = value >> 7;
+		byte &dst = READ_REGISTER(idx);
+		byte flag = dst >> 7;
+
+		dst <<= 1;
+		carry = flag;
+	}
+	void Interpreter::shr_original(size_t idx, size_t idy) {
 		byte value = READ_REGISTER(idy);
-
+		
 		MODIFY_REGISTER(idx, value >> 1);
 		carry = value & 0x01;
 	}
-	inline void Interpreter::shl(size_t idx, size_t idy) {
+	void Interpreter::shl_original(size_t idx, size_t idy) {
 		byte value = READ_REGISTER(idy);
 
 		MODIFY_REGISTER(idx, value << 1);
@@ -413,7 +460,6 @@ namespace chip8 {
 	inline void Interpreter::flush() {
 		memset(frame, 0x00, sizeof(frame));
 
-		carry = 0x01;
 		frameUpdate = true;
 	}
 	inline void Interpreter::sprite(size_t idx, size_t idy, word value) {
@@ -499,14 +545,6 @@ namespace chip8 {
 			ret();
 			return COUNT_CYCLES_TAKEN_BY_GROUP0(10);
 
-		//default:
-			//word address = EXTRACT_VAL3(opcode);
-
-			//if (address >= OFFSET_PROGRAM_START) {
-			//	// It is strange, but some programs seem to use 0NNN
-			//	// as a 2NNN 'call' command.
-			//	return op2(opcode);
-			//}
 			// All other machine instructions are ignored.
 			// TODO: define machine instructions precessing here.
 		}
@@ -573,13 +611,13 @@ namespace chip8 {
 			sbxyc(EXTRACT_REGX(opcode), EXTRACT_REGY(opcode));
 			return COUNT_CYCLES_TAKEN_BY_GROUPN(44);
 		case 0x06:
-			shr(EXTRACT_REGX(opcode), EXTRACT_REGY(opcode));
+			(this->*shr)(EXTRACT_REGX(opcode), EXTRACT_REGY(opcode));
 			return COUNT_CYCLES_TAKEN_BY_GROUPN(44);
 		case 0x07:
 			sbyxc(EXTRACT_REGX(opcode), EXTRACT_REGY(opcode));
 			return COUNT_CYCLES_TAKEN_BY_GROUPN(44);
 		case 0x0E:
-			shl(EXTRACT_REGX(opcode), EXTRACT_REGY(opcode));
+			(this->*shl)(EXTRACT_REGX(opcode), EXTRACT_REGY(opcode));
 			return COUNT_CYCLES_TAKEN_BY_GROUPN(44);
 		}
 		return COUNT_CYCLES_GROUPN_DEFAULT;

@@ -13,29 +13,55 @@ protected:
 	std::auto_ptr<Interpreter> interpreter;
 
 	Interpreter::Snapshot snapshot;
+	word aluProfileActive;
 
 	void SetUp() {
-		interpreter.reset(new Interpreter);
+		interpreter.reset(new Interpreter(aluProfileActive));
 
 		Interpreter::Snapshot::obtain(snapshot, *interpreter);
 	}
+
+
+public:
+
+	InterpreterTest(word aluProfile)
+		: aluProfileActive(aluProfile) {
+
+		/* Nothing to do */
+	}
 };
 
-TEST_F(InterpreterTest, Initialization) {
+
+//////////////////////////////////////////////////////////////////////////////
+// Test Interpreter in ORIGINAL ALU profile preset.
+//////////////////////////////////////////////////////////////////////////////
+
+class OriginalInterpreterTest : public InterpreterTest {
+
+public:
+
+	OriginalInterpreterTest()
+		: InterpreterTest(Interpreter::ALU_PROFILE_ORIGINAL) {
+		/* Nothing to do */
+	}
+};
+
+
+TEST_F(OriginalInterpreterTest, Initialization) {
 	interpreter->reset(std::ifstream("15PUZZLE"));
 
 	EXPECT_EQ(0, snapshot.getTimerDelay());
 	EXPECT_EQ(0, snapshot.getTimerSound());
 	EXPECT_EQ(0ull, snapshot.getCountCycles());
 	EXPECT_EQ(Interpreter::STACK_DEPTH, snapshot.getStackPointer());
-	EXPECT_EQ(Interpreter::KEY_HALT_UNSET, snapshot.getKeyHaltRegister());
+	EXPECT_LE(Interpreter::REGISTERS_COUNT, snapshot.getKeyHaltRegister());
 	EXPECT_EQ(0, snapshot.getCarryValue());
 	EXPECT_EQ(0, snapshot.getIndexValue());
 	EXPECT_EQ(Interpreter::OFFSET_PROGRAM_START, snapshot.getProgramCounterValue());
 	EXPECT_EQ(Interpreter::KEY_NONE, snapshot.getKeyboardValue());
 }
 
-TEST_F(InterpreterTest, Opcode0NNN_2NNN) {
+TEST_F(OriginalInterpreterTest, Opcode0NNN_2NNN) {
 	// Opcode 00e0
 	{
 		const byte program[] = { 0x00,0xE0 };
@@ -45,7 +71,6 @@ TEST_F(InterpreterTest, Opcode0NNN_2NNN) {
 
 		interpreter->doCycle(Interpreter::KEY_NONE);
 		ASSERT_TRUE(interpreter->isFrameUpdated());
-		EXPECT_EQ(0x01, snapshot.getCarryValue());
 		EXPECT_EQ(0, memcmp(&snapshot.getFrameValue(0), referenceFrame, sizeof(Interpreter::Frame)));
 
 		EXPECT_EQ(64, snapshot.getCountCycles());
@@ -66,7 +91,7 @@ TEST_F(InterpreterTest, Opcode0NNN_2NNN) {
 	}
 }
 
-TEST_F(InterpreterTest, Opcode1NNN) {
+TEST_F(OriginalInterpreterTest, Opcode1NNN) {
 	const byte program[] = { 0x12,0x00 };
 
 	interpreter->reset(program, sizeof(program));
@@ -80,7 +105,7 @@ TEST_F(InterpreterTest, Opcode1NNN) {
 	EXPECT_EQ(160, snapshot.getCountCycles());
 }
 
-TEST_F(InterpreterTest, Opcode3XNN_4XNN_6XNN_1NNN) {
+TEST_F(OriginalInterpreterTest, Opcode3XNN_4XNN_6XNN_1NNN) {
 	// Opcode 3XNN \w 6XNN & 1NNN (True)
 	{
 		const byte program[] = { 0x65,0xBE, 0x35,0xBE, 0x65,0x00, 0x12,0x00 };
@@ -161,7 +186,7 @@ TEST_F(InterpreterTest, Opcode3XNN_4XNN_6XNN_1NNN) {
 	}
 }
 
-TEST_F(InterpreterTest, Opcode5XY0_9XY0_6XNN_1NNN) {
+TEST_F(OriginalInterpreterTest, Opcode5XY0_9XY0_6XNN_1NNN) {
 	// Opcode 5XY0 \w 6XNN & 1NNN (True)
 	{
 		const byte program[] = { 0x6E,0xE0, 0x60,0xE0, 0x5E,0x00, 0x12,0x0C, 0x6E,0x00, 0x60,0x00, 0x12,0x00 };
@@ -264,7 +289,7 @@ TEST_F(InterpreterTest, Opcode5XY0_9XY0_6XNN_1NNN) {
 	}
 }
 
-TEST_F(InterpreterTest, Opcode7XNN_6XNN_1NNN) {
+TEST_F(OriginalInterpreterTest, Opcode7XNN_6XNN_1NNN) {
 	const byte program[] = { 0x6A,0xFE, 0x7A,0x02, 0x8B,0xA0, 0x12,0x00 };
 
 	interpreter->reset(program, sizeof(program));
@@ -284,7 +309,7 @@ TEST_F(InterpreterTest, Opcode7XNN_6XNN_1NNN) {
 	EXPECT_EQ(312, snapshot.getCountCycles());
 }
 
-TEST_F(InterpreterTest, Opcode8XYN_6XNN) {
+TEST_F(OriginalInterpreterTest, Opcode8XYN_6XNN) {
 	// Opcode 8XY0
 	{
 		const byte program[] = { 0x6D,0xAA, 0x83,0xD0 };
@@ -524,7 +549,7 @@ TEST_F(InterpreterTest, Opcode8XYN_6XNN) {
 	}
 }
 
-TEST_F(InterpreterTest, OpcodeBNNN_6XNN) {
+TEST_F(OriginalInterpreterTest, OpcodeBNNN_6XNN) {
 	const byte program[] = { 0x60,0x06, 0xB2,0x00, 0xB1,0xFC, 0x60,0x04, 0xB2,0x00 };
 
 	interpreter->reset(program, sizeof(program));
@@ -547,7 +572,7 @@ TEST_F(InterpreterTest, OpcodeBNNN_6XNN) {
 	EXPECT_EQ(418, snapshot.getCountCycles());
 }
 
-TEST_F(InterpreterTest, OpcodeDXYN_6XNN_ANNN) {
+TEST_F(OriginalInterpreterTest, OpcodeDXYN_6XNN_ANNN) {
 	const byte program[] = { 0xA2,0x20,
 
 		0x60,0x00, 0x61,0x00, 0xD0,0x18,			//  0;  0
@@ -644,7 +669,7 @@ TEST_F(InterpreterTest, OpcodeDXYN_6XNN_ANNN) {
 	EXPECT_EQ(11320, snapshot.getCountCycles());
 }
 
-TEST_F(InterpreterTest, OpcodeEX9E_EXA1_6XNN) {
+TEST_F(OriginalInterpreterTest, OpcodeEX9E_EXA1_6XNN) {
 	const byte program[] = { 0x6E,0x06, 0xEE,0x9E, 0x6E,0x00, 0x12,0x00 };
 
 	interpreter->reset(program, sizeof(program));
@@ -679,7 +704,7 @@ TEST_F(InterpreterTest, OpcodeEX9E_EXA1_6XNN) {
 	EXPECT_EQ(Interpreter::OFFSET_PROGRAM_START, snapshot.getProgramCounterValue());
 }
 
-TEST_F(InterpreterTest, OpcodeFXNN_6XNN_ANNN) {
+TEST_F(OriginalInterpreterTest, OpcodeFXNN_6XNN_ANNN) {
 	// Opcode FX15, FX18 and FX07 \w 6XNN
 	{
 		const byte program[] = { 0x6E,0xFF, 0xFE,0x15, 0xFE,0x18, 0xFA,0x07 };
@@ -862,5 +887,92 @@ TEST_F(InterpreterTest, OpcodeFXNN_6XNN_ANNN) {
 		EXPECT_EQ(0x212, snapshot.getIndexValue());
 
 		EXPECT_EQ(2044, snapshot.getCountCycles());
+	}
+}
+
+
+//////////////////////////////////////////////////////////////////////////////
+// Test Interpreter in MODERN ALU profile preset.
+//////////////////////////////////////////////////////////////////////////////
+
+
+class ModernInterpreterTest : public InterpreterTest {
+
+public:
+
+	ModernInterpreterTest()
+		: InterpreterTest(Interpreter::ALU_PROFILE_MODERN) {
+		/* Nothing to do */
+	}
+};
+
+TEST_F(ModernInterpreterTest, Opcode8XYN_6XNN) {
+	// Opcode 8XY6 (no carry)
+	{
+		const byte program[] = { 0x63,0x00, 0x6D,0x02, 0x8D,0x36 };
+
+		interpreter->reset(program, sizeof(program));
+
+		interpreter->doCycle(Interpreter::KEY_NONE);
+		interpreter->doCycle(Interpreter::KEY_NONE);
+		EXPECT_EQ(0x02, snapshot.getRegisterValue(13));
+
+		interpreter->doCycle(Interpreter::KEY_NONE);
+		EXPECT_EQ(0x01, snapshot.getRegisterValue(13));
+		EXPECT_EQ(0x00, snapshot.getRegisterValue(3));
+		EXPECT_EQ(0x00, snapshot.getCarryValue());
+
+		EXPECT_EQ(260, snapshot.getCountCycles());
+	}
+	// Opcode 8XY6 (carry)
+	{
+		const byte program[] = { 0x63,0x00, 0x6D,0x05, 0x8D,0x36 };
+
+		interpreter->reset(program, sizeof(program));
+
+		interpreter->doCycle(Interpreter::KEY_NONE);
+		interpreter->doCycle(Interpreter::KEY_NONE);
+		EXPECT_EQ(0x05, snapshot.getRegisterValue(13));
+
+		interpreter->doCycle(Interpreter::KEY_NONE);
+		EXPECT_EQ(0x02, snapshot.getRegisterValue(13));
+		EXPECT_EQ(0x00, snapshot.getRegisterValue(3));
+		EXPECT_EQ(0x01, snapshot.getCarryValue());
+
+		EXPECT_EQ(260, snapshot.getCountCycles());
+	}
+	// Opcode 8XYE (no carry)
+	{
+		const byte program[] = { 0x63,0x00, 0x6D,0x40, 0x8D,0x3E };
+
+		interpreter->reset(program, sizeof(program));
+
+		interpreter->doCycle(Interpreter::KEY_NONE);
+		interpreter->doCycle(Interpreter::KEY_NONE);
+		EXPECT_EQ(0x40, snapshot.getRegisterValue(13));
+
+		interpreter->doCycle(Interpreter::KEY_NONE);
+		EXPECT_EQ(0x80, snapshot.getRegisterValue(13));
+		EXPECT_EQ(0x00, snapshot.getRegisterValue(3));
+		EXPECT_EQ(0x00, snapshot.getCarryValue());
+
+		EXPECT_EQ(260, snapshot.getCountCycles());
+	}
+	// Opcode 8XYE (carry)
+	{
+		const byte program[] = { 0x63,0x00, 0x6D,0xA0, 0x8D,0x3E };
+
+		interpreter->reset(program, sizeof(program));
+
+		interpreter->doCycle(Interpreter::KEY_NONE);
+		interpreter->doCycle(Interpreter::KEY_NONE);
+		EXPECT_EQ(0xA0, snapshot.getRegisterValue(13));
+
+		interpreter->doCycle(Interpreter::KEY_NONE);
+		EXPECT_EQ(0x40, snapshot.getRegisterValue(13));
+		EXPECT_EQ(0x00, snapshot.getRegisterValue(3));
+		EXPECT_EQ(0x01, snapshot.getCarryValue());
+
+		EXPECT_EQ(260, snapshot.getCountCycles());
 	}
 }

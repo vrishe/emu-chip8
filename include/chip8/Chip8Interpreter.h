@@ -15,7 +15,6 @@ namespace chip8 {
 
 		static byte font[0x50];
 
-
 		enum : word {
 			STACK_DEPTH				= 0x20,
 			REGISTERS_COUNT			= 0x10,
@@ -25,7 +24,9 @@ namespace chip8 {
 
 			OFFSET_PROGRAM_START	= 0x200,
 			ADDRESS_SPACE_DEFAULT	= 0x1000,
-			KEY_HALT_UNSET			= word(-1)
+			
+			ALU_PROFILE_ORIGINAL	= 0x1F01,
+			ALU_PROFILE_MODERN		= 0x1F02
 		};
 
 		typedef byte(Frame)[FRAME_HEIGHT * FRAME_WIDTH];
@@ -52,9 +53,15 @@ namespace chip8 {
 		};
 	
 
-		Interpreter(size_t memorySize = ADDRESS_SPACE_DEFAULT);
+		Interpreter(word aluProfile = ALU_PROFILE_MODERN, size_t memorySize = ADDRESS_SPACE_DEFAULT);
 
 		~Interpreter();
+
+
+		word getALUProfile() const {
+			return aluProfile;
+		}
+
 
 		void doCycle(Keyboard key);
 
@@ -96,11 +103,27 @@ namespace chip8 {
 
 	private:
 
+		Interpreter(const Interpreter&);
+
+
+		typedef void (Interpreter::*ALUFunc) (size_t, size_t);
+
+		ALUFunc shl;
+		ALUFunc shr;
+
+
+		const word aluProfile;
+
+		void applyALUProfile(word aluProfile);
+
+
 		enum : size_t {
 			TIMER_DELAY = 0,
 			TIMER_SOUND = 1,
 
-			TIMESTAMP_UNDEFINED = ~0u
+			KEY_HALT_UNSET = size_t(-1),
+
+			TIMESTAMP_UNDEFINED = size_t(-1)
 		};
 
 		struct countdown_timer {
@@ -180,8 +203,10 @@ namespace chip8 {
 		void and(size_t idx, size_t idy);					// VX = VX  and VY.
 		void xor(size_t idx, size_t idy);					// VX = VX  xo  VY.
 
-		void shr(size_t idx, size_t idy);					// Store VY shifted one bit right, setting VF to least significant bit first. 
-		void shl(size_t idx, size_t idy);					// Store VY shifted one bit left, setting VF to most significant bit first.
+		void shr_modern(size_t idx, size_t idy);			// Store VX shifted one bit right to VX, setting VF to least significant bit first. 
+		void shl_modern(size_t idx, size_t idy);			// Store VX shifted one bit left to VX, setting VF to most significant bit first.
+		void shr_original(size_t idx, size_t idy);			// Store VY shifted one bit right to VX, setting VF to least significant bit first. 
+		void shl_original(size_t idx, size_t idy);			// Store VY shifted one bit left to VX, setting VF to most significant bit first.
 
 		void rnd(size_t idx, word value);					// Set VX to RND and NN value.
 
