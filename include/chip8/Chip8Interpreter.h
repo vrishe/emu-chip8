@@ -51,6 +51,21 @@ namespace chip8 {
 			KEY_E = 0x4000,
 			KEY_F = 0x8000
 		};
+
+		enum Error {
+			ERROR_OK = 0,
+
+			ERROR_NO_PROGRAM,
+			ERROR_PROGRAM_TOO_LARGE,
+			ERROR_PROGRAM_TOO_SMALL,
+
+			ERROR_STACK_OVERFLOW,
+			ERROR_STACK_UNDERFLOW,
+
+			ERROR_INDEX_OUT_OF_BOUNDS,
+
+			ERROR_UNEXPECTED
+		};
 	
 
 		Interpreter(word aluProfile = ALU_PROFILE_MODERN, size_t memorySize = ADDRESS_SPACE_DEFAULT);
@@ -60,6 +75,10 @@ namespace chip8 {
 
 		word getALUProfile() const {
 			return aluProfile;
+		}
+
+		Error getLastError() const {
+			return lastError;
 		}
 
 
@@ -97,7 +116,12 @@ namespace chip8 {
 		}
 
 		bool isOk() const {
-			return !failState;
+			return getLastError() == ERROR_OK;
+		}
+
+
+		operator bool() const {
+			return isOk();
 		}
 
 
@@ -155,9 +179,8 @@ namespace chip8 {
 		byte *memory;
 
 
-		bool failState;
-
-
+		Error lastError;
+		
 		void reset_impl();
 
 		void refreshTimers();
@@ -180,9 +203,6 @@ namespace chip8 {
 		bool skbh(size_t idx);								// Skip, if keyboard key by value of VX IS pressed.
 		bool skbnh(size_t idx);								// Skip, if keyboard key by value of VX IS NOT pressed.
 
-
-		void key(size_t idx);								// Wait for a key hit, then write a rey index to VX.
-
 		void movn(size_t idx, word value);					// Set VX to NN value.
 		void movy(size_t idx, size_t idy);					// Set VX to VY.
 		void movd(size_t idx);								// Set VX to delay timer value.
@@ -190,34 +210,31 @@ namespace chip8 {
 		void movms(size_t idx);								// Store the values of registerx V0 through VX within memory, starting at I.
 
 		void sti(word value);								// Store value to index register.
-
-		size_t bcd(size_t idx);								// Store the value of register VX binary-decimal encoded within the memory located at [I, I + 1, I + 2].
+		void adi(size_t idx);								// Add VX to index register.
 
 		void add(size_t idx, word value);					// Add NN to VX.
 		void adc(size_t idx, size_t idy);					// Add VY to VX with carry (1 - occurred, 0 - otherwise).
-		void adi(size_t idx);
 		void sbxyc(size_t idx, size_t idy);					// Subtract VY from VX with borrow (0 - occurref, 1 = otherwise).
 		void sbyxc(size_t idx, size_t idy);					// Subtract VY from VX with borrow (0 - occurref, 1 = otherwise).
-
-		void or(size_t idx, size_t idy);					// VX = VX  or  VY.
-		void and(size_t idx, size_t idy);					// VX = VX  and VY.
-		void xor(size_t idx, size_t idy);					// VX = VX  xo  VY.
-
 		void shr_modern(size_t idx, size_t idy);			// Store VX shifted one bit right to VX, setting VF to least significant bit first. 
 		void shl_modern(size_t idx, size_t idy);			// Store VX shifted one bit left to VX, setting VF to most significant bit first.
 		void shr_original(size_t idx, size_t idy);			// Store VY shifted one bit right to VX, setting VF to least significant bit first. 
 		void shl_original(size_t idx, size_t idy);			// Store VY shifted one bit left to VX, setting VF to most significant bit first.
 
-		void rnd(size_t idx, word value);					// Set VX to RND and NN value.
-
-		void sound(size_t idx);								// Set value of sound timer.
-		void delay(size_t idx);								// Set value of delay timer.
-
-
-		void flush();										// Clear the screen.
-		void sprite(size_t idx, size_t idy, word value);	// Display a sprite on screen.
+		void or(size_t idx, size_t idy);					// VX = VX  or  VY.
+		void and(size_t idx, size_t idy);					// VX = VX  and VY.
+		void xor(size_t idx, size_t idy);					// VX = VX  xo  VY.
 
 		void sym(size_t idx);								// Fetch an address of the sprite that corresponds to HEX digit, that is stored in VX.
+		void rnd(size_t idx, word value);					// Set VX to RND and NN value.
+		
+		size_t bcd(size_t idx);								// Store the value of register VX binary-decimal encoded within the memory located at [I, I + 1, I + 2].
+		
+		void flush();										// Clear the screen.
+		void sprite(size_t idx, size_t idy, word value);	// Display a sprite on screen.
+		void sound(size_t idx);								// Set value of sound timer.
+		void delay(size_t idx);								// Set value of delay timer.
+		void key(size_t idx);								// Wait for a key hit, then write a rey index to VX.
 
 
 		// ========================================================

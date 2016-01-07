@@ -23,10 +23,11 @@ namespace chip8 {
 		applyALUProfile(aluProfile);
 
 		memory = new byte[memorySize];
+		memset(memory, 0x00, memorySize);
 		memcpy(memory, font, sizeof(font));
 
 		rndSeed = reinterpret_cast<word>(this);
-		reset(nullptr, -1);
+		reset_impl();
 	}
 
 	Interpreter::~Interpreter() {
@@ -49,49 +50,37 @@ namespace chip8 {
 	}
 
 
-#ifdef _DEBUG
-#define MODIFY_ARRAY_OP(arr, idx, op, value, lower, higher)	\
-	{														\
-		assert(lower <= (idx) && (idx) < higher);			\
-		arr[idx] op (value);								\
+#define FETCH_OPCODE(offset, lower, higher)								\
+	(																	\
+		assert(lower <= (offset) && (offset) < higher),					\
+		(memory + (offset))												\
+	)
+#define MODIFY_REGISTER_OP(idx, op, value)								\
+	{																	\
+		assert(0U <= (idx) && (idx) < Interpreter::REGISTERS_COUNT);	\
+		registers[idx] op (value);										\
 	}
-#define READ_ARRAY(arr, idx, lower, higher)					\
-	(														\
-		assert(lower <= (idx) && (idx) < higher),			\
-		arr[idx]											\
+#define READ_REGISTER(idx)												\
+	(																	\
+		assert(0U <= (idx) && (idx) < Interpreter::REGISTERS_COUNT),	\
+		registers[idx]													\
 	)
-#define FETCH_OPCODE(offset, lower, higher)					\
-	(														\
-		assert(lower <= (offset) && (offset) < higher),		\
-		(memory + (offset))									\
-	)
-#else
-#define MODIFY_ARRAY_OP(arr, idx, op, value, lower, higher) \
-	(failState = !(lower <= (idx) && (idx) < higher), arr[idx] op (value))
-#define READ_ARRAY(arr, idx, lower, higher)	\
-	(failState = !(lower <= (idx) && (idx) < higher), arr[idx])
-#define FETCH_OPCODE(offset, lower, higher)	\
-	(failState = !(lower <= (offset) && (offset) < higher), (memory + (offset)))
-#endif // _DEBUG
+
+
+#define MODIFY_ARRAY_OP_(arr, idx, op, value, lower, higher, errc)	\
+	(lastError = (!(lower <= (idx) && (idx) < higher) ? (errc) : Interpreter::ERROR_OK), arr[idx] op (value))
+#define READ_ARRAY_(arr, idx, lower, higher, errc)					\
+	(lastError = (!(lower <= (idx) && (idx) < higher) ? (errc) : ERROR_OK), arr[idx])
 
 #define MODIFY_STACK(idx, value) \
-	MODIFY_ARRAY_OP(stack, idx, =, value, 0U, Interpreter::STACK_DEPTH)
+	MODIFY_ARRAY_OP_(stack, idx, =, value, 0U, Interpreter::STACK_DEPTH, Interpreter::ERROR_STACK_OVERFLOW)
 #define READ_STACK(idx) \
-	READ_ARRAY(stack, idx, 0U, Interpreter::STACK_DEPTH)
+	READ_ARRAY_(stack, idx, 0U, Interpreter::STACK_DEPTH, Interpreter::ERROR_STACK_OVERFLOW)
 
-#define MODIFY_REGISTER_OP(idx, op, value) \
-	MODIFY_ARRAY_OP(registers, idx, op, value, 0U, Interpreter::REGISTERS_COUNT)
-#define MODIFY_REGISTER(idx, value) \
-	MODIFY_ARRAY_OP(registers, idx, =, value, 0U, Interpreter::REGISTERS_COUNT)
-#define READ_REGISTER(idx) \
-	READ_ARRAY(registers, idx, 0, Interpreter::REGISTERS_COUNT)
-
-#define MODIFY_MEMORY_OP(idx, op, value) \
-	MODIFY_ARRAY_OP(memory, idx, op, value, Interpreter::OFFSET_PROGRAM_START, memorySize)
 #define MODIFY_MEMORY(idx, value) \
-	MODIFY_ARRAY_OP(memory, idx, =, value, Interpreter::OFFSET_PROGRAM_START, memorySize)
+	MODIFY_ARRAY_OP_(memory, idx, =, value, Interpreter::OFFSET_PROGRAM_START, memorySize, Interpreter::ERROR_INDEX_OUT_OF_BOUNDS)
 #define READ_MEMORY(idx) \
-	READ_ARRAY(memory, idx, 0U, memorySize)
+	READ_ARRAY_(memory, idx, 0U, memorySize, Interpreter::ERROR_INDEX_OUT_OF_BOUNDS)
 
 
 #define PROGRAM_COUNTER_STEP sizeof(Opcode)
@@ -146,44 +135,61 @@ namespace chip8 {
 
 	void Interpreter::reset(const byte *prg, size_t prgLen)
 	{
+		assert(prg);
 		reset_impl();
 
 		byte *clientMemory = memory + pc;
 		size_t countPadded = memorySize - pc;
 
-		if (!!prg) {
-			if (prgLen <= countPadded) {
+		if (prgLen > 0) {
+			lastError = ERROR_OK;
+
+			if (prgLen < sizeof(Opcode)) {
+				lastError = ERROR_PROGRAM_TOO_SMALL;
+			}
+			else if (prgLen > countPadded) {
+				lastError = ERROR_PROGRAM_TOO_LARGE;
+			}
+			if (isOk()) {
 				memcpy(clientMemory, prg, prgLen);
 
 				clientMemory += prgLen;
 				countPadded -= prgLen;
 			}
-			else
-			{
-				failState = true;
-			}
 		}
-		if (!failState && countPadded > 0) {
+		if (countPadded > 0) {
 			memset(clientMemory, 0x00, countPadded);
 		}
 	}
 	void Interpreter::reset(std::istream &prgStream)
 	{
+		assert(prgStream);
 		reset_impl();
 
 		byte *clientMemory = memory + pc;
-		std::streamsize readLen = memorySize - pc, fillExcessLen = readLen;
+		size_t countPadded = memorySize - pc;
 
-		if (prgStream.good()) {
-			prgStream.read(reinterpret_cast<char *>(clientMemory), readLen);
-			
-			clientMemory += prgStream.gcount();
-			fillExcessLen -= prgStream.gcount();
+		prgStream.read(reinterpret_cast<char *>(clientMemory), countPadded);
+
+		auto prgLen = size_t(prgStream.gcount());
+
+		if (prgLen > 0) {
+			lastError = ERROR_OK;
+
+			if (prgLen < sizeof(Opcode)) {
+				lastError = ERROR_PROGRAM_TOO_SMALL;
+			}
+			else if (prgLen > countPadded) {
+				lastError = ERROR_PROGRAM_TOO_LARGE;
+			}
+			if (isOk()) {
+				clientMemory += prgLen;
+				countPadded -= prgLen;
+			}
 		}
-		if (fillExcessLen == readLen) {
-			pc = 0x00;
+		if (countPadded > 0) {
+			memset(clientMemory, 0x00, countPadded);
 		}
-		memset(clientMemory, 0x00, size_t(fillExcessLen));
 	}
 
 	void Interpreter::reset_impl() {
@@ -208,7 +214,7 @@ namespace chip8 {
 		pc = OFFSET_PROGRAM_START;
 		kb = KEY_NONE;
 
-		failState = false;
+		lastError = ERROR_NO_PROGRAM;
 	}
 
 
@@ -302,23 +308,18 @@ namespace chip8 {
 	}
 
 
-	inline void Interpreter::key(size_t idx) {
-		keyHaltRegister = idx;
-	}
-
-
 	inline void Interpreter::movn(size_t idx, word value) {
-		MODIFY_REGISTER(idx, byte(value));
+		MODIFY_REGISTER_OP(idx, =, byte(value));
 	}
 	inline void Interpreter::movy(size_t idx, size_t idy) {
-		MODIFY_REGISTER(idx, READ_REGISTER(idy));
+		MODIFY_REGISTER_OP(idx, =, READ_REGISTER(idy));
 	}
 	inline void Interpreter::movd(size_t idx) {
-		MODIFY_REGISTER(idx, timers[TIMER_DELAY].value);
+		MODIFY_REGISTER_OP(idx, =, timers[TIMER_DELAY].value);
 	}
 	inline void Interpreter::movrs(size_t idx) {
 		for (size_t i = 0; i <= idx; ++i, ++index) {
-			MODIFY_REGISTER(i, READ_MEMORY(index));
+			MODIFY_REGISTER_OP(i, =, READ_MEMORY(index));
 		}
 	}
 	inline void Interpreter::movms(size_t idx) {
@@ -331,30 +332,13 @@ namespace chip8 {
 	inline void Interpreter::sti(word value) {
 		index = value;
 	}
-
-
-	inline size_t Interpreter::bcd(size_t idx) {
-		word value = READ_REGISTER(idx);
-
-		int hundreds = value / 100; 
-		value = value % 100;
-
-		int tens = value / 10;
-		int ones = value % 10;
-
-		MODIFY_MEMORY(index,		hundreds);
-		MODIFY_MEMORY(index + 1U,	tens);
-		MODIFY_MEMORY(index + 2U,	ones);
-
-		return hundreds + tens + ones;
+	inline void Interpreter::adi(size_t idx) {
+		index += READ_REGISTER(idx);
 	}
 
 
 	inline void Interpreter::add(size_t idx, word value) {
-		MODIFY_REGISTER_OP(idx, +=, value);
-	}
-	inline void Interpreter::adi(size_t idx) {
-		index += READ_REGISTER(idx);
+		MODIFY_REGISTER_OP(idx, += , value);
 	}
 
 	// As per: http://laurencescotford.co.uk/?p=266
@@ -382,25 +366,7 @@ namespace chip8 {
 		carry = !!(result >> 8) ? 0x00 : 0x01;
 	}
 
-
-	inline void Interpreter::or(size_t idx, size_t idy) {
-		MODIFY_REGISTER_OP(idx, |=, READ_REGISTER(idy));
-	}
-	inline void Interpreter::and(size_t idx, size_t idy) {
-		MODIFY_REGISTER_OP(idx, &= , READ_REGISTER(idy));
-	}
-	inline void Interpreter::xor(size_t idx, size_t idy) {
-		MODIFY_REGISTER_OP(idx, ^= , READ_REGISTER(idy));
-	}
-
-	// As per: http://laurencescotford.co.uk/?p=266
-	// carry flag is being assigned the last. This mean that is you
-	// use REG F as output, the result will be overwritten by a status flag.
 	void Interpreter::shr_modern(size_t idx, size_t idy) {
-		//byte value = READ_REGISTER(idy);
-		//
-		//MODIFY_REGISTER(idx, value >> 1);
-		//carry = value & 0x01;
 		byte &dst = READ_REGISTER(idx);
 		byte flag = dst & 0x01;
 
@@ -408,10 +374,6 @@ namespace chip8 {
 		carry = flag;
 	}
 	void Interpreter::shl_modern(size_t idx, size_t idy) {
-		//byte value = READ_REGISTER(idy);
-
-		//MODIFY_REGISTER(idx, value << 1);
-		//carry = value >> 7;
 		byte &dst = READ_REGISTER(idx);
 		byte flag = dst >> 7;
 
@@ -420,18 +382,32 @@ namespace chip8 {
 	}
 	void Interpreter::shr_original(size_t idx, size_t idy) {
 		byte value = READ_REGISTER(idy);
-		
-		MODIFY_REGISTER(idx, value >> 1);
+
+		MODIFY_REGISTER_OP(idx, = , value >> 1);
 		carry = value & 0x01;
 	}
 	void Interpreter::shl_original(size_t idx, size_t idy) {
 		byte value = READ_REGISTER(idy);
 
-		MODIFY_REGISTER(idx, value << 1);
+		MODIFY_REGISTER_OP(idx, = , value << 1);
 		carry = value >> 7;
 	}
 
 
+	inline void Interpreter::or(size_t idx, size_t idy) {
+		MODIFY_REGISTER_OP(idx, |= , READ_REGISTER(idy));
+	}
+	inline void Interpreter::and(size_t idx, size_t idy) {
+		MODIFY_REGISTER_OP(idx, &= , READ_REGISTER(idy));
+	}
+	inline void Interpreter::xor(size_t idx, size_t idy) {
+		MODIFY_REGISTER_OP(idx, ^= , READ_REGISTER(idy));
+	}
+
+
+	inline void Interpreter::sym(size_t idx) {
+		index = READ_REGISTER(idx) * FONT_SYMBOL_HEIGHT;
+	}
 	inline void Interpreter::rnd(size_t idx, word value) {
 		word loSeed = rndSeed + 1 & 0x00FF;
 		word result = READ_MEMORY(pc & 0xFF00U | loSeed);
@@ -441,19 +417,24 @@ namespace chip8 {
 		}
 		rndSeed = ((result & 0xFF) << 8) | loSeed;
 
-		MODIFY_REGISTER(idx, byte(result & value));
+		MODIFY_REGISTER_OP(idx, = , byte(result & value));
 	}
 
 
-	inline void Interpreter::sound(size_t idx) {
-		word reg = READ_REGISTER(idx);
+	inline size_t Interpreter::bcd(size_t idx) {
+		word value = READ_REGISTER(idx);
 
-		timers[TIMER_SOUND].value = reg > 1 ? reg : 0;
-		timers[TIMER_SOUND].timestamp = countCycles + TIMER_TICK_CYCLES;
-	}
-	inline void Interpreter::delay(size_t idx) {
-		timers[TIMER_DELAY].value = READ_REGISTER(idx);
-		timers[TIMER_DELAY].timestamp = countCycles + TIMER_TICK_CYCLES;
+		int hundreds = value / 100;
+		value = value % 100;
+
+		int tens = value / 10;
+		int ones = value % 10;
+
+		MODIFY_MEMORY(index, hundreds);
+		MODIFY_MEMORY(index + 1U, tens);
+		MODIFY_MEMORY(index + 2U, ones);
+
+		return hundreds + tens + ones;
 	}
 
 
@@ -494,11 +475,20 @@ namespace chip8 {
 
 		frameUpdate = true;
 	}
+	inline void Interpreter::sound(size_t idx) {
+		word reg = READ_REGISTER(idx);
 
-	inline void Interpreter::sym(size_t idx) {
-		index = READ_REGISTER(idx) * FONT_SYMBOL_HEIGHT;
+		timers[TIMER_SOUND].value = reg > 1 ? reg : 0;
+		timers[TIMER_SOUND].timestamp = countCycles + TIMER_TICK_CYCLES;
 	}
-
+	inline void Interpreter::delay(size_t idx) {
+		timers[TIMER_DELAY].value = READ_REGISTER(idx);
+		timers[TIMER_DELAY].timestamp = countCycles + TIMER_TICK_CYCLES;
+	}
+	inline void Interpreter::key(size_t idx) {
+		keyHaltRegister = idx;
+	}
+	
 
 	// ========================================================
 	// complementary methods
@@ -547,6 +537,9 @@ namespace chip8 {
 
 			// All other machine instructions are ignored.
 			// TODO: define machine instructions precessing here.
+
+		default:
+			lastError = ERROR_UNEXPECTED;
 		}
 		return COUNT_CYCLES_GROUP0_DEFAULT;
 	}
@@ -576,6 +569,9 @@ namespace chip8 {
 		if (EXTRACT_VAL1(opcode) == 0) {
 			return COUNT_CYCLES_TAKEN_BY_GROUPN_BRANCH(
 				sxye(EXTRACT_REGX(opcode), EXTRACT_REGY(opcode)), 18, 14);
+		}
+		else {
+			lastError = ERROR_UNEXPECTED;
 		}
 		return COUNT_CYCLES_GROUPN_DEFAULT;
 	}
@@ -619,6 +615,9 @@ namespace chip8 {
 		case 0x0E:
 			(this->*shl)(EXTRACT_REGX(opcode), EXTRACT_REGY(opcode));
 			return COUNT_CYCLES_TAKEN_BY_GROUPN(44);
+
+		default:
+			lastError = ERROR_UNEXPECTED;
 		}
 		return COUNT_CYCLES_GROUPN_DEFAULT;
 	}
@@ -626,6 +625,9 @@ namespace chip8 {
 		if (EXTRACT_VAL1(opcode) == 0) {
 			return COUNT_CYCLES_TAKEN_BY_GROUPN_BRANCH(
 				sxyne(EXTRACT_REGX(opcode), EXTRACT_REGY(opcode)), 18, 14);
+		}
+		else {
+			lastError = ERROR_UNEXPECTED;
 		}
 		return COUNT_CYCLES_GROUPN_DEFAULT;
 	}
@@ -664,6 +666,9 @@ namespace chip8 {
 		case 0xA1:
 			return COUNT_CYCLES_TAKEN_BY_GROUPN_BRANCH(
 				skbnh(EXTRACT_REGX(opcode)), 18, 14);
+
+		default:
+			lastError = ERROR_UNEXPECTED;
 		}
 		return COUNT_CYCLES_GROUPN_DEFAULT;
 	}
@@ -710,6 +715,9 @@ namespace chip8 {
 		case 0x33: COUNT_CYCLES_TAKEN_BY_GROUPN_WEIGHTED(bcd, opcode, 84, 16);
 		case 0x55: COUNT_CYCLES_TAKEN_BY_GROUPN_SERIAL(movms, opcode, 4, 14);
 		case 0x65: COUNT_CYCLES_TAKEN_BY_GROUPN_SERIAL(movrs, opcode, 4, 14);
+
+		default:
+			lastError = ERROR_UNEXPECTED;
 		}
 		return COUNT_CYCLES_GROUPN_DEFAULT;
 	}

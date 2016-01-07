@@ -48,17 +48,41 @@ public:
 
 
 TEST_F(OriginalInterpreterTest, Initialization) {
-	interpreter->reset(std::ifstream("15PUZZLE"));
+	// Valid
+	{
+		interpreter->reset(std::ifstream("15PUZZLE"));
 
-	EXPECT_EQ(0, snapshot.getTimerDelay());
-	EXPECT_EQ(0, snapshot.getTimerSound());
-	EXPECT_EQ(0ull, snapshot.getCountCycles());
-	EXPECT_EQ(Interpreter::STACK_DEPTH, snapshot.getStackPointer());
-	EXPECT_LE(Interpreter::REGISTERS_COUNT, snapshot.getKeyHaltRegister());
-	EXPECT_EQ(0, snapshot.getCarryValue());
-	EXPECT_EQ(0, snapshot.getIndexValue());
-	EXPECT_EQ(Interpreter::OFFSET_PROGRAM_START, snapshot.getProgramCounterValue());
-	EXPECT_EQ(Interpreter::KEY_NONE, snapshot.getKeyboardValue());
+		EXPECT_TRUE(*interpreter);
+		EXPECT_EQ(0, snapshot.getTimerDelay());
+		EXPECT_EQ(0, snapshot.getTimerSound());
+		EXPECT_EQ(0ull, snapshot.getCountCycles());
+		EXPECT_EQ(Interpreter::STACK_DEPTH, snapshot.getStackPointer());
+		EXPECT_LE(Interpreter::REGISTERS_COUNT, snapshot.getKeyHaltRegister());
+		EXPECT_EQ(0, snapshot.getCarryValue());
+		EXPECT_EQ(0, snapshot.getIndexValue());
+		EXPECT_EQ(Interpreter::OFFSET_PROGRAM_START, snapshot.getProgramCounterValue());
+		EXPECT_EQ(Interpreter::KEY_NONE, snapshot.getKeyboardValue());
+	}
+	// Invalid (no program, program too small)
+	{
+		const byte program[] = { 0x00 };
+
+		interpreter->reset(program, 0);
+		EXPECT_EQ(Interpreter::ERROR_NO_PROGRAM, interpreter->getLastError());
+		EXPECT_TRUE(!interpreter->isOk());
+		
+		interpreter->reset(program);
+		EXPECT_EQ(Interpreter::ERROR_PROGRAM_TOO_SMALL, interpreter->getLastError());
+		EXPECT_FALSE(interpreter->isOk());
+	}
+	// Invalid (program too large)
+	{
+		const byte program[Interpreter::ADDRESS_SPACE_DEFAULT] = { 0x00 };
+
+		interpreter->reset(program);
+		EXPECT_EQ(Interpreter::ERROR_PROGRAM_TOO_LARGE, interpreter->getLastError());
+		EXPECT_TRUE(!*interpreter);
+	}
 }
 
 TEST_F(OriginalInterpreterTest, Opcode0NNN_2NNN) {
