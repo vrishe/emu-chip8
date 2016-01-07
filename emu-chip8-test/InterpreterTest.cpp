@@ -83,11 +83,11 @@ TEST_F(OriginalInterpreterTest, Initialization) {
 		const byte program[] = { 0x00 };
 
 		interpreter->reset(program, 0);
-		EXPECT_EQ(Interpreter::ERROR_NO_PROGRAM, interpreter->getLastError());
+		EXPECT_EQ(Interpreter::INTERPRETER_ERROR_NO_PROGRAM, interpreter->getLastError());
 		EXPECT_TRUE(!interpreter->isOk());
 		
 		interpreter->reset(program);
-		EXPECT_EQ(Interpreter::ERROR_PROGRAM_TOO_SMALL, interpreter->getLastError());
+		EXPECT_EQ(Interpreter::INTERPRETER_ERROR_PROGRAM_TOO_SMALL, interpreter->getLastError());
 		EXPECT_FALSE(interpreter->isOk());
 	}
 	// Invalid (program too large)
@@ -95,7 +95,7 @@ TEST_F(OriginalInterpreterTest, Initialization) {
 		const byte program[Interpreter::ADDRESS_SPACE_DEFAULT] = { 0x00 };
 
 		interpreter->reset(program);
-		EXPECT_EQ(Interpreter::ERROR_PROGRAM_TOO_LARGE, interpreter->getLastError());
+		EXPECT_EQ(Interpreter::INTERPRETER_ERROR_PROGRAM_TOO_LARGE, interpreter->getLastError());
 		EXPECT_TRUE(!*interpreter);
 	}
 }
