@@ -20,6 +20,9 @@
     <ClInclude Include="..\include\logger.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\include\chip8\Chip8Keyboard.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\src\Chip8Interpreter.cpp">

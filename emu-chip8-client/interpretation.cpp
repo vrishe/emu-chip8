@@ -31,7 +31,7 @@ void InterpretationThread::run() {
 					PostMessage(hwndOwner, WM_USER_INTERPRETATION, 0, (LPARAM)this);
 				}
 				else {
-					interpreter->doCycle(keyMapper->mapKey());
+					interpreter->doCycle();
 				}
 			}
 		}

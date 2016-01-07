@@ -4,7 +4,7 @@
 #define CHIP8_INTERPRETER_
 
 #include "Chip8Base.h"
-#include "Chip8Timer.h"
+#include "Chip8Keyboard.h"
 
 #include <istream>
 
@@ -29,60 +29,41 @@ namespace chip8 {
 			ALU_PROFILE_MODERN		= 0x1F02
 		};
 
-		typedef byte(Frame)[FRAME_HEIGHT * FRAME_WIDTH];
-
-
-		enum Keyboard : word {
-			KEY_NONE = 0,
-			KEY_0 = 0x0001,
-			KEY_1 = 0x0002,
-			KEY_2 = 0x0004,
-			KEY_3 = 0x0008,
-			KEY_4 = 0x0010,
-			KEY_5 = 0x0020,
-			KEY_6 = 0x0040,
-			KEY_7 = 0x0080,
-			KEY_8 = 0x0100,
-			KEY_9 = 0x0200,
-			KEY_A = 0x0400,
-			KEY_B = 0x0800,
-			KEY_C = 0x1000,
-			KEY_D = 0x2000,
-			KEY_E = 0x4000,
-			KEY_F = 0x8000
-		};
-
 		enum Error {
-			ERROR_OK = 0,
+			INTERPRETER_ERROR_OK = 0,
 
-			ERROR_NO_PROGRAM,
-			ERROR_PROGRAM_TOO_LARGE,
-			ERROR_PROGRAM_TOO_SMALL,
+			INTERPRETER_ERROR_NO_PROGRAM,
+			INTERPRETER_ERROR_PROGRAM_TOO_LARGE,
+			INTERPRETER_ERROR_PROGRAM_TOO_SMALL,
 
-			ERROR_STACK_OVERFLOW,
-			ERROR_STACK_UNDERFLOW,
+			INTERPRETER_ERROR_STACK_OVERFLOW,
+			INTERPRETER_ERROR_STACK_UNDERFLOW,
 
-			ERROR_INDEX_OUT_OF_BOUNDS,
+			INTERPRETER_ERROR_INDEX_OUT_OF_BOUNDS,
 
-			ERROR_UNEXPECTED
+			INTERPRETER_ERROR_UNEXPECTED
 		};
+
+		typedef byte(Frame)[FRAME_HEIGHT * FRAME_WIDTH];
 	
 
-		Interpreter(word aluProfile = ALU_PROFILE_MODERN, size_t memorySize = ADDRESS_SPACE_DEFAULT);
+		Interpreter(IKeyPad *keyPad, word aluProfile = ALU_PROFILE_MODERN, size_t memorySize = ADDRESS_SPACE_DEFAULT);
 
 		~Interpreter();
 
 
-		word getALUProfile() const {
-			return aluProfile;
+		void doCycle();
+
+		void reset() {
+			reset_impl();
 		}
-
-		Error getLastError() const {
-			return lastError;
+		template <size_t prgLen>
+		void reset(const byte(&prg)[prgLen]) {
+			reset(prg, prgLen);
 		}
+		void reset(const byte *prg, size_t prgLen);
+		void reset(std::istream &prgStream);
 
-
-		void doCycle(Keyboard key);
 
 		Frame &getFrame() {
 			frameUpdate = false;
@@ -90,17 +71,9 @@ namespace chip8 {
 			return frame;
 		}
 
-
-		void reset() {
-			reset_impl();
+		Error getLastError() const {
+			return lastError;
 		}
-
-		template <size_t Count>
-		void reset(const byte(&prg)[Count]) {
-			reset(prg, Count);
-		}
-		void reset(const byte *prg, size_t prgLen);
-		void reset(std::istream &prgStream);
 
 
 		bool isPlayingSound() const {
@@ -116,7 +89,7 @@ namespace chip8 {
 		}
 
 		bool isOk() const {
-			return getLastError() == ERROR_OK;
+			return getLastError() == INTERPRETER_ERROR_OK;
 		}
 
 
@@ -130,13 +103,15 @@ namespace chip8 {
 		Interpreter(const Interpreter&);
 
 
+		IKeyPad *deviceKeyPad;
+
+		Error lastError;
+
+
 		typedef void (Interpreter::*ALUFunc) (size_t, size_t);
 
 		ALUFunc shl;
 		ALUFunc shr;
-
-
-		const word aluProfile;
 
 		void applyALUProfile(word aluProfile);
 
@@ -179,8 +154,6 @@ namespace chip8 {
 		byte *memory;
 
 
-		Error lastError;
-		
 		void reset_impl();
 
 		void refreshTimers();
@@ -253,6 +226,11 @@ namespace chip8 {
 		// all the operations are gathered within so-called
 		// clusters. This allows to avoid switch-based branching.
 		// ========================================================
+
+		struct Opcode {
+			byte hi;
+			byte lo;
+		};
 
 		inline size_t op0(const Opcode &opcode); inline size_t op1(const Opcode &opcode);
 		inline size_t op2(const Opcode &opcode); inline size_t op3(const Opcode &opcode);

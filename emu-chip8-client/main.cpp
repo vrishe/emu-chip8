@@ -7,48 +7,49 @@
 #include "interpretation.h"
 
 
-class DefaultKeyMapper : public IKeyMapper {
+class DefaultKeyPad : public chip8::IKeyPad {
 
 	std::atomic_ushort kbstate;
 
 public:
 
-	DefaultKeyMapper() {
-		kbstate = chip8::Interpreter::KEY_NONE;
+	DefaultKeyPad() {
+		kbstate = chip8::PadKeys::KEY_NONE;
 	}
 
 	void updateKey(UINT vk, BOOL fDown) {
 		USHORT result = kbstate, reference = result;
 
 		switch (vk) {
-		case 'X': result = fDown ? (result | chip8::Interpreter::KEY_0) : (result & ~chip8::Interpreter::KEY_0);  break;
-		case '1': result = fDown ? (result | chip8::Interpreter::KEY_1) : (result & ~chip8::Interpreter::KEY_1);  break;
-		case '2': result = fDown ? (result | chip8::Interpreter::KEY_2) : (result & ~chip8::Interpreter::KEY_2);  break;
-		case '3': result = fDown ? (result | chip8::Interpreter::KEY_3) : (result & ~chip8::Interpreter::KEY_3);  break;
-		case 'Q': result = fDown ? (result | chip8::Interpreter::KEY_4) : (result & ~chip8::Interpreter::KEY_4);  break;
-		case 'W': result = fDown ? (result | chip8::Interpreter::KEY_5) : (result & ~chip8::Interpreter::KEY_5);  break;
-		case 'E': result = fDown ? (result | chip8::Interpreter::KEY_6) : (result & ~chip8::Interpreter::KEY_6);  break;
-		case 'A': result = fDown ? (result | chip8::Interpreter::KEY_7) : (result & ~chip8::Interpreter::KEY_7);  break;
-		case 'S': result = fDown ? (result | chip8::Interpreter::KEY_8) : (result & ~chip8::Interpreter::KEY_8);  break;
-		case 'D': result = fDown ? (result | chip8::Interpreter::KEY_9) : (result & ~chip8::Interpreter::KEY_9);  break;
-		case 'Z': result = fDown ? (result | chip8::Interpreter::KEY_A) : (result & ~chip8::Interpreter::KEY_A);  break;
-		case 'C': result = fDown ? (result | chip8::Interpreter::KEY_B) : (result & ~chip8::Interpreter::KEY_B);  break;
-		case '4': result = fDown ? (result | chip8::Interpreter::KEY_C) : (result & ~chip8::Interpreter::KEY_C);  break;
-		case 'R': result = fDown ? (result | chip8::Interpreter::KEY_D) : (result & ~chip8::Interpreter::KEY_D);  break;
-		case 'F': result = fDown ? (result | chip8::Interpreter::KEY_E) : (result & ~chip8::Interpreter::KEY_E);  break;
-		case 'V': result = fDown ? (result | chip8::Interpreter::KEY_F) : (result & ~chip8::Interpreter::KEY_F);  break;
+		case 'X': result = fDown ? (result | chip8::PadKeys::KEY_0) : (result & ~chip8::PadKeys::KEY_0);  break;
+		case '1': result = fDown ? (result | chip8::PadKeys::KEY_1) : (result & ~chip8::PadKeys::KEY_1);  break;
+		case '2': result = fDown ? (result | chip8::PadKeys::KEY_2) : (result & ~chip8::PadKeys::KEY_2);  break;
+		case '3': result = fDown ? (result | chip8::PadKeys::KEY_3) : (result & ~chip8::PadKeys::KEY_3);  break;
+		case 'Q': result = fDown ? (result | chip8::PadKeys::KEY_4) : (result & ~chip8::PadKeys::KEY_4);  break;
+		case 'W': result = fDown ? (result | chip8::PadKeys::KEY_5) : (result & ~chip8::PadKeys::KEY_5);  break;
+		case 'E': result = fDown ? (result | chip8::PadKeys::KEY_6) : (result & ~chip8::PadKeys::KEY_6);  break;
+		case 'A': result = fDown ? (result | chip8::PadKeys::KEY_7) : (result & ~chip8::PadKeys::KEY_7);  break;
+		case 'S': result = fDown ? (result | chip8::PadKeys::KEY_8) : (result & ~chip8::PadKeys::KEY_8);  break;
+		case 'D': result = fDown ? (result | chip8::PadKeys::KEY_9) : (result & ~chip8::PadKeys::KEY_9);  break;
+		case 'Z': result = fDown ? (result | chip8::PadKeys::KEY_A) : (result & ~chip8::PadKeys::KEY_A);  break;
+		case 'C': result = fDown ? (result | chip8::PadKeys::KEY_B) : (result & ~chip8::PadKeys::KEY_B);  break;
+		case '4': result = fDown ? (result | chip8::PadKeys::KEY_C) : (result & ~chip8::PadKeys::KEY_C);  break;
+		case 'R': result = fDown ? (result | chip8::PadKeys::KEY_D) : (result & ~chip8::PadKeys::KEY_D);  break;
+		case 'F': result = fDown ? (result | chip8::PadKeys::KEY_E) : (result & ~chip8::PadKeys::KEY_E);  break;
+		case 'V': result = fDown ? (result | chip8::PadKeys::KEY_F) : (result & ~chip8::PadKeys::KEY_F);  break;
 		}
 		if (result != reference) {
 			kbstate = result;
 		}
 	}
 
-	virtual chip8::Interpreter::Keyboard mapKey() {
-		return (chip8::Interpreter::Keyboard)kbstate.load();
+	virtual chip8::PadKeys getState() const {
+		return (chip8::PadKeys)kbstate.load();
 	}
 };
-static chip8::Interpreter machine;
-static DefaultKeyMapper defaultKeyMapper;
+static DefaultKeyPad defaultKeyPad;
+static chip8::Interpreter machine(&defaultKeyPad);
+
 
 
 #define DISPLAY_PIXEL_COLOR { 0.0f, 0.6549f, 0.0f, 1.0f }
@@ -245,7 +246,7 @@ static void DrawGLScene(Chip8DisplayExtra *extra) {
 static BOOL Chip8DisplayCreate(HWND hWnd, LPCREATESTRUCT lpCreateStruct) {
 	auto extra = new Chip8DisplayExtra;
 	{
-		extra->interpreter = new InterpretationThread(hWnd, &machine, &defaultKeyMapper);
+		extra->interpreter = new InterpretationThread(hWnd, &machine);
 		extra->hDC = GetDC(hWnd);
 
 		CreateGLContext(extra);
@@ -400,7 +401,7 @@ static VOID Chip8DisplayCommand(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify
 }
 
 static void Chip8DisplayKeyUpDown(HWND hwnd, UINT vk, BOOL fDown, int cRepeat, UINT flags) {
-	defaultKeyMapper.updateKey(vk, fDown);
+	defaultKeyPad.updateKey(vk, fDown);
 }
 
 static void Chip8DisplayUserInterpretation(HWND hWnd, InterpretationThread *interpreter) {

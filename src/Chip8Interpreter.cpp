@@ -17,11 +17,17 @@ namespace chip8 {
 		/* C */ 0xF0, 0x80, 0x80, 0x80, 0xF0,  /* D */ 0xE0, 0x90, 0x90, 0x90, 0xE0,  /* E */ 0xF0, 0x80, 0xF0, 0x80, 0xF0,  /* F */ 0xF0, 0x80, 0xF0, 0x80, 0x80
 	};
 
-	Interpreter::Interpreter(word aluProfile, size_t memorySize)
-		: aluProfile(aluProfile), memorySize(memorySize), carry(registers[REGISTERS_COUNT - 1]) {
+	Interpreter::Interpreter(IKeyPad *keyPad, word aluProfile, size_t memorySize)
+		: memorySize(memorySize), carry(registers[REGISTERS_COUNT - 1]) {
 
+		assert(aluProfile == ALU_PROFILE_MODERN 
+			|| aluProfile == ALU_PROFILE_ORIGINAL);
 		applyALUProfile(aluProfile);
 
+		assert(keyPad);
+		deviceKeyPad = keyPad;
+
+		assert(memorySize > 0);
 		memory = new byte[memorySize];
 		memset(memory, 0x00, memorySize);
 		memcpy(memory, font, sizeof(font));
@@ -68,33 +74,36 @@ namespace chip8 {
 
 
 #define MODIFY_ARRAY_OP_(arr, idx, op, value, lower, higher, errc)	\
-	(lastError = (!(lower <= (idx) && (idx) < higher) ? (errc) : Interpreter::ERROR_OK), arr[idx] op (value))
+	(lastError = (!(lower <= (idx) && (idx) < higher) ? (errc) : INTERPRETER_ERROR_OK), arr[idx] op (value))
 #define READ_ARRAY_(arr, idx, lower, higher, errc)					\
-	(lastError = (!(lower <= (idx) && (idx) < higher) ? (errc) : ERROR_OK), arr[idx])
+	(lastError = (!(lower <= (idx) && (idx) < higher) ? (errc) : INTERPRETER_ERROR_OK), arr[idx])
 
 #define MODIFY_STACK(idx, value) \
-	MODIFY_ARRAY_OP_(stack, idx, =, value, 0U, Interpreter::STACK_DEPTH, Interpreter::ERROR_STACK_OVERFLOW)
+	MODIFY_ARRAY_OP_(stack, idx, =, value, 0U, STACK_DEPTH, INTERPRETER_ERROR_STACK_OVERFLOW)
 #define READ_STACK(idx) \
-	READ_ARRAY_(stack, idx, 0U, Interpreter::STACK_DEPTH, Interpreter::ERROR_STACK_OVERFLOW)
+	READ_ARRAY_(stack, idx, 0U, STACK_DEPTH, INTERPRETER_ERROR_STACK_OVERFLOW)
 
 #define MODIFY_MEMORY(idx, value) \
-	MODIFY_ARRAY_OP_(memory, idx, =, value, Interpreter::OFFSET_PROGRAM_START, memorySize, Interpreter::ERROR_INDEX_OUT_OF_BOUNDS)
+	MODIFY_ARRAY_OP_(memory, idx, =, value, OFFSET_PROGRAM_START, memorySize, INTERPRETER_ERROR_INDEX_OUT_OF_BOUNDS)
 #define READ_MEMORY(idx) \
-	READ_ARRAY_(memory, idx, 0U, memorySize, Interpreter::ERROR_INDEX_OUT_OF_BOUNDS)
+	READ_ARRAY_(memory, idx, 0U, memorySize, INTERPRETER_ERROR_INDEX_OUT_OF_BOUNDS)
 
 
 #define PROGRAM_COUNTER_STEP sizeof(Opcode)
 #define EXTRACT_OP(opcode) (opcode.hi >> 4)
 
-	void Interpreter::doCycle(Keyboard key) {
+	void Interpreter::doCycle() {
 		assert(isOk());
+
+		// TODO: it may be allowed to have no keypad in future.
+		PadKeys kbState = deviceKeyPad->getState();
 
 		if (isKeyAwaited()) {
 			auto &timer = timers[TIMER_SOUND];
 
 			// This check allows to trigger this method on each loop pass.
 			// So, simply there's no need to track keyboard hit externally.
-			if (key == KEY_NONE && kb != KEY_NONE) {
+			if (kbState == KEY_NONE && kb != KEY_NONE) {
 
 				byte keyIdx = 0;
 				while (((kb >> keyIdx) & 0x01) == 0) {
@@ -103,22 +112,22 @@ namespace chip8 {
 				registers[keyHaltRegister] = keyIdx;
 				keyHaltRegister = KEY_HALT_UNSET;
 
-				// Reset timer sound as it will be overridden by key hit await routine.
+				// Reset timer sound as it will be overridden by kbState hit await routine.
 				timer.value = 0;
 			} 
 			else {
-				// Continue beep'ing until key is not released.
+				// Continue beep'ing until kbState is not released.
 				if (timer.value == 0) {
 					timer.value = 4;
 				}
 			}
-			// This branch is responsile for key debounce emulation.
+			// This branch is responsile for kbState debounce emulation.
 			// Not sure, it'll take just 9 cycles.
 			//
 			// See: http://laurencescotford.co.uk/?p=347 for details.
 			countCycles += 9;
 		}
-		kb = key;
+		kb = kbState;
 
 		if (!isKeyAwaited()) {
 			Opcode opcode = *reinterpret_cast<Opcode *>(const_cast<byte*>(
@@ -142,13 +151,13 @@ namespace chip8 {
 		size_t countPadded = memorySize - pc;
 
 		if (prgLen > 0) {
-			lastError = ERROR_OK;
+			lastError = INTERPRETER_ERROR_OK;
 
 			if (prgLen < sizeof(Opcode)) {
-				lastError = ERROR_PROGRAM_TOO_SMALL;
+				lastError = INTERPRETER_ERROR_PROGRAM_TOO_SMALL;
 			}
 			else if (prgLen > countPadded) {
-				lastError = ERROR_PROGRAM_TOO_LARGE;
+				lastError = INTERPRETER_ERROR_PROGRAM_TOO_LARGE;
 			}
 			if (isOk()) {
 				memcpy(clientMemory, prg, prgLen);
@@ -174,13 +183,13 @@ namespace chip8 {
 		auto prgLen = size_t(prgStream.gcount());
 
 		if (prgLen > 0) {
-			lastError = ERROR_OK;
+			lastError = INTERPRETER_ERROR_OK;
 
 			if (prgLen < sizeof(Opcode)) {
-				lastError = ERROR_PROGRAM_TOO_SMALL;
+				lastError = INTERPRETER_ERROR_PROGRAM_TOO_SMALL;
 			}
 			else if (prgLen > countPadded) {
-				lastError = ERROR_PROGRAM_TOO_LARGE;
+				lastError = INTERPRETER_ERROR_PROGRAM_TOO_LARGE;
 			}
 			if (isOk()) {
 				clientMemory += prgLen;
@@ -214,7 +223,7 @@ namespace chip8 {
 		pc = OFFSET_PROGRAM_START;
 		kb = KEY_NONE;
 
-		lastError = ERROR_NO_PROGRAM;
+		lastError = INTERPRETER_ERROR_NO_PROGRAM;
 	}
 
 
@@ -539,7 +548,7 @@ namespace chip8 {
 			// TODO: define machine instructions precessing here.
 
 		default:
-			lastError = ERROR_UNEXPECTED;
+			lastError = INTERPRETER_ERROR_UNEXPECTED;
 		}
 		return COUNT_CYCLES_GROUP0_DEFAULT;
 	}
@@ -571,7 +580,7 @@ namespace chip8 {
 				sxye(EXTRACT_REGX(opcode), EXTRACT_REGY(opcode)), 18, 14);
 		}
 		else {
-			lastError = ERROR_UNEXPECTED;
+			lastError = INTERPRETER_ERROR_UNEXPECTED;
 		}
 		return COUNT_CYCLES_GROUPN_DEFAULT;
 	}
@@ -617,7 +626,7 @@ namespace chip8 {
 			return COUNT_CYCLES_TAKEN_BY_GROUPN(44);
 
 		default:
-			lastError = ERROR_UNEXPECTED;
+			lastError = INTERPRETER_ERROR_UNEXPECTED;
 		}
 		return COUNT_CYCLES_GROUPN_DEFAULT;
 	}
@@ -627,7 +636,7 @@ namespace chip8 {
 				sxyne(EXTRACT_REGX(opcode), EXTRACT_REGY(opcode)), 18, 14);
 		}
 		else {
-			lastError = ERROR_UNEXPECTED;
+			lastError = INTERPRETER_ERROR_UNEXPECTED;
 		}
 		return COUNT_CYCLES_GROUPN_DEFAULT;
 	}
@@ -668,7 +677,7 @@ namespace chip8 {
 				skbnh(EXTRACT_REGX(opcode)), 18, 14);
 
 		default:
-			lastError = ERROR_UNEXPECTED;
+			lastError = INTERPRETER_ERROR_UNEXPECTED;
 		}
 		return COUNT_CYCLES_GROUPN_DEFAULT;
 	}
@@ -717,7 +726,7 @@ namespace chip8 {
 		case 0x65: COUNT_CYCLES_TAKEN_BY_GROUPN_SERIAL(movrs, opcode, 4, 14);
 
 		default:
-			lastError = ERROR_UNEXPECTED;
+			lastError = INTERPRETER_ERROR_UNEXPECTED;
 		}
 		return COUNT_CYCLES_GROUPN_DEFAULT;
 	}

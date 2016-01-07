@@ -13,6 +13,7 @@
   <ItemGroup>
     <ClInclude Include="..\include\chip8\Chip8Base.h" />
     <ClInclude Include="..\include\chip8\Chip8Interpreter.h" />
+    <ClInclude Include="..\include\chip8\Chip8Keyboard.h" />
     <ClInclude Include="..\include\logger.h" />
   </ItemGroup>
   <ItemGroup>

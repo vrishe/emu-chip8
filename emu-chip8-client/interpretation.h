@@ -2,10 +2,7 @@
 
 #include "chip8\Chip8Interpreter.h"
 
-class IKeyMapper {
-public:
-	virtual chip8::Interpreter::Keyboard mapKey() = 0;
-};
+
 
 #define WM_USER_INTERPRETATION	(WM_USER + 1024)
 #define HANDLE_WM_USER_INTERPRETATION(hWnd, wParam, lParam, fn) \
@@ -55,11 +52,9 @@ class InterpretationThread {
 #define ATTACH_DEBUG_SNAPSHOT(interpreter)
 #endif // _DEBUG
 
-	chip8::Interpreter *	const interpreter;
-	IKeyMapper *			const keyMapper;
+	chip8::Interpreter * const interpreter;
 
 	std::atomic_bool waitFrameUpdate;
-
 
 	class ITask {
 	public:
@@ -77,8 +72,8 @@ class InterpretationThread {
 	InterpretationThread(const InterpretationThread &);
 
 public:
-	InterpretationThread(HWND hwndOwner, chip8::Interpreter *interpreter, IKeyMapper *keyMapper)
-		: hwndOwner(hwndOwner), interpreter(interpreter), keyMapper(keyMapper) {
+	InterpretationThread(HWND hwndOwner, chip8::Interpreter *interpreter)
+		: hwndOwner(hwndOwner), interpreter(interpreter) {
 
 		interpreter->reset();
 
