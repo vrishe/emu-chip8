@@ -3,53 +3,19 @@
 
 #include "stdafx.h"
 
+#include "chip8\Chip8Interpreter.h"
+#include "chip8\Chip8Display.h"
+
 #include "main.h"
 #include "interpretation.h"
+#include "RingBufferedDisplay.h"
+#include "VKMappedKeyPad.h"
 
 
-class DefaultKeyPad : public chip8::IKeyPad {
+static platform::RingBufferedDisplay<8>	defaultDisplay;
+static platform::VKMappedKeypad			defaultKeypad;
 
-	std::atomic_ushort kbstate;
-
-public:
-
-	DefaultKeyPad() {
-		kbstate = chip8::PadKeys::KEY_NONE;
-	}
-
-	void updateKey(UINT vk, BOOL fDown) {
-		USHORT result = kbstate, reference = result;
-
-		switch (vk) {
-		case 'X': result = fDown ? (result | chip8::PadKeys::KEY_0) : (result & ~chip8::PadKeys::KEY_0);  break;
-		case '1': result = fDown ? (result | chip8::PadKeys::KEY_1) : (result & ~chip8::PadKeys::KEY_1);  break;
-		case '2': result = fDown ? (result | chip8::PadKeys::KEY_2) : (result & ~chip8::PadKeys::KEY_2);  break;
-		case '3': result = fDown ? (result | chip8::PadKeys::KEY_3) : (result & ~chip8::PadKeys::KEY_3);  break;
-		case 'Q': result = fDown ? (result | chip8::PadKeys::KEY_4) : (result & ~chip8::PadKeys::KEY_4);  break;
-		case 'W': result = fDown ? (result | chip8::PadKeys::KEY_5) : (result & ~chip8::PadKeys::KEY_5);  break;
-		case 'E': result = fDown ? (result | chip8::PadKeys::KEY_6) : (result & ~chip8::PadKeys::KEY_6);  break;
-		case 'A': result = fDown ? (result | chip8::PadKeys::KEY_7) : (result & ~chip8::PadKeys::KEY_7);  break;
-		case 'S': result = fDown ? (result | chip8::PadKeys::KEY_8) : (result & ~chip8::PadKeys::KEY_8);  break;
-		case 'D': result = fDown ? (result | chip8::PadKeys::KEY_9) : (result & ~chip8::PadKeys::KEY_9);  break;
-		case 'Z': result = fDown ? (result | chip8::PadKeys::KEY_A) : (result & ~chip8::PadKeys::KEY_A);  break;
-		case 'C': result = fDown ? (result | chip8::PadKeys::KEY_B) : (result & ~chip8::PadKeys::KEY_B);  break;
-		case '4': result = fDown ? (result | chip8::PadKeys::KEY_C) : (result & ~chip8::PadKeys::KEY_C);  break;
-		case 'R': result = fDown ? (result | chip8::PadKeys::KEY_D) : (result & ~chip8::PadKeys::KEY_D);  break;
-		case 'F': result = fDown ? (result | chip8::PadKeys::KEY_E) : (result & ~chip8::PadKeys::KEY_E);  break;
-		case 'V': result = fDown ? (result | chip8::PadKeys::KEY_F) : (result & ~chip8::PadKeys::KEY_F);  break;
-		}
-		if (result != reference) {
-			kbstate = result;
-		}
-	}
-
-	virtual chip8::PadKeys getState() const {
-		return (chip8::PadKeys)kbstate.load();
-	}
-};
-static DefaultKeyPad defaultKeyPad;
-static chip8::Interpreter machine(&defaultKeyPad);
-
+static chip8::Interpreter machine(&defaultDisplay, &defaultKeypad);
 
 
 #define DISPLAY_PIXEL_COLOR { 0.0f, 0.6549f, 0.0f, 1.0f }
@@ -183,8 +149,8 @@ static void CreateGLScene(Chip8DisplayExtra *extra, double l, double t, double r
 	glBindTexture(GL_TEXTURE_2D, idTex);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, chip8::Interpreter::FRAME_WIDTH, 
-		chip8::Interpreter::FRAME_HEIGHT, 0, GL_RED, GL_UNSIGNED_BYTE, NULL);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, defaultDisplay.width(), 
+		defaultDisplay.height(), 0, GL_RED, GL_UNSIGNED_BYTE, NULL);
 
 	idShaderV = glCreateShader(GL_VERTEX_SHADER);
 	idShaderF = glCreateShader(GL_FRAGMENT_SHADER);
@@ -401,16 +367,12 @@ static VOID Chip8DisplayCommand(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify
 }
 
 static void Chip8DisplayKeyUpDown(HWND hwnd, UINT vk, BOOL fDown, int cRepeat, UINT flags) {
-	defaultKeyPad.updateKey(vk, fDown);
+	defaultKeypad.updateKey(vk, fDown);
 }
 
 static void Chip8DisplayUserInterpretation(HWND hWnd, InterpretationThread *interpreter) {
-	auto frame = interpreter->beginFrameUpdate();
-	{
-		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, chip8::Interpreter::FRAME_WIDTH,
-			chip8::Interpreter::FRAME_HEIGHT, GL_RED, GL_UNSIGNED_BYTE, frame);
-	}
-	interpreter->endFrameUpdate();
+	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, defaultDisplay.width(),
+		defaultDisplay.height(), GL_RED, GL_UNSIGNED_BYTE, defaultDisplay.consume());
 
 	InvalidateRect(hWnd, NULL, FALSE);
 }

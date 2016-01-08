@@ -3,6 +3,7 @@
 #include "logger.h"
 
 #include <cassert>
+#include <algorithm>
 
 
 namespace chip8 {
@@ -17,13 +18,17 @@ namespace chip8 {
 		/* C */ 0xF0, 0x80, 0x80, 0x80, 0xF0,  /* D */ 0xE0, 0x90, 0x90, 0x90, 0xE0,  /* E */ 0xF0, 0x80, 0xF0, 0x80, 0xF0,  /* F */ 0xF0, 0x80, 0xF0, 0x80, 0x80
 	};
 
-	Interpreter::Interpreter(IKeyPad *keyPad, word aluProfile, size_t memorySize)
+	Interpreter::Interpreter(IDisplay *display, IKeyPad *keyPad, 	
+		word aluProfile, size_t memorySize)
+
 		: memorySize(memorySize), carry(registers[REGISTERS_COUNT - 1]) {
 
 		assert(aluProfile == ALU_PROFILE_MODERN 
 			|| aluProfile == ALU_PROFILE_ORIGINAL);
 		applyALUProfile(aluProfile);
 
+		assert(display);
+		deviceDisplay = display;
 		assert(keyPad);
 		deviceKeyPad = keyPad;
 
@@ -202,7 +207,7 @@ namespace chip8 {
 	}
 
 	void Interpreter::reset_impl() {
-		flush();
+		cls();
 
 		memset(stack, 0x00, sizeof(stack));
 		memset(registers, 0x00, sizeof(registers));
@@ -447,42 +452,41 @@ namespace chip8 {
 	}
 
 
-	inline void Interpreter::flush() {
-		memset(frame, 0x00, sizeof(frame));
+	inline void Interpreter::cls() {
+		memset(deviceDisplay->getLine(0, 0), 0x00, deviceDisplay->area());
 
-		frameUpdate = true;
+		deviceDisplay->invalidate();
 	}
 	inline void Interpreter::sprite(size_t idx, size_t idy, word value) {
-		size_t x = READ_REGISTER(idx) % FRAME_WIDTH, y = READ_REGISTER(idy) % FRAME_HEIGHT;
-		size_t offsetX = FRAME_WIDTH - x;
+		if (value > 0) {
+			const size_t y = READ_REGISTER(idy) % deviceDisplay->height();
+			const size_t x = READ_REGISTER(idx) % deviceDisplay->width();
+			const size_t w = std::min<size_t>(deviceDisplay->width() - x, 8);
+			const byte strideMask = (w < 8) ? (0xFF << (8 - w)) : 0xFF;
 
-		if (offsetX < 8) { 
-			offsetX = 8 - offsetX; 
-		}
-		else {
-			offsetX = 0;
-		}
-		bool collision = false;
+			bool collision = false;
 
-		for (size_t i = index, imax = index + value; y < FRAME_HEIGHT && i < imax; ++i) {
-			byte *line = frame + x + FRAME_WIDTH * y++;
-			byte stride = READ_MEMORY(i) & (0xFF << offsetX);
+			size_t h = 0;
+			for (size_t r = y, rmax = deviceDisplay->height(), 
+					i = index, imax = index + value;
+				r < rmax && i < imax; ++i, ++r, ++h) {
 
-			while (!!stride) {
-				byte &pixel = *line;
-				byte value = !!(stride & 0x80) ? 0xFF : 0x00;
+				byte *line = deviceDisplay->getLine(r, x);
+				for (byte *column = line, stride = (READ_MEMORY(i) & strideMask);
+					!!stride; ++column, stride <<= 1) {
 
-				pixel ^= value;
-				collision = (value != 0x00 && pixel == 0x00);
+					if (!!(stride & 0x80)) {
+						byte &pixel = *column;
 
-				++line;
-
-				stride <<= 1;
+						pixel ^= 0xFF;
+						collision = pixel == 0x00;
+					}
+				}
 			}
-		}
-		carry = collision ? 0x01 : 0x00;
+			carry = collision ? 0x01 : 0x00;
 
-		frameUpdate = true;
+			deviceDisplay->invalidate(byte(x), byte(y), byte(w), byte(h));
+		}
 	}
 	inline void Interpreter::sound(size_t idx) {
 		word reg = READ_REGISTER(idx);
@@ -538,7 +542,7 @@ namespace chip8 {
 	size_t Interpreter::op0(const Opcode &opcode) {
 		switch (opcode.lo) {
 		case 0xE0:
-			flush();
+			cls();
 			return COUNT_CYCLES_TAKEN_BY_GROUP0(24);
 		case 0XEE:
 			ret();

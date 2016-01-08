@@ -29,6 +29,8 @@ namespace chip8 {
 
 	class IKeyPad {
 	public:
+		virtual ~IKeyPad() { /* Nothing to do */ }
+
 		virtual PadKeys getState() const = 0;
 	};
 

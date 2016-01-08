@@ -1,10 +1,28 @@
 #pragma once
 
+#include "chip8\Chip8Display.h"
 #include "chip8\Chip8Interpreter.h"
 
 
+class RingBufferedDisplay : public chip8::DisplayBase {
+	chip8::word area() const;
+	chip8::byte width() const;
+	chip8::byte height() const;
 
-#define WM_USER_INTERPRETATION	(WM_USER + 1024)
+
+	chip8::byte *getLine(byte index, byte offset);
+	chip8::DefaultDisplay::Frame &getFrame();
+
+
+	operator byte*();
+
+private:
+
+	chip8::DefaultDisplay::Frame frame[8];
+};
+
+
+#define WM_USER_INTERPRETATION (WM_USER + 1024)
 #define HANDLE_WM_USER_INTERPRETATION(hWnd, wParam, lParam, fn) \
 	((fn)(hWnd, (InterpretationThread*)lParam), 0L)
 
@@ -54,8 +72,6 @@ class InterpretationThread {
 
 	chip8::Interpreter * const interpreter;
 
-	std::atomic_bool waitFrameUpdate;
-
 	class ITask {
 	public:
 		virtual void perform() = 0;
@@ -91,7 +107,4 @@ public:
 	void reset();
 	void pause();
 	void stop();
-
-	const chip8::Interpreter::Frame &beginFrameUpdate();
-	void endFrameUpdate();
 };

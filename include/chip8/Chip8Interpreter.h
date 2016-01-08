@@ -4,6 +4,7 @@
 #define CHIP8_INTERPRETER_
 
 #include "Chip8Base.h"
+#include "Chip8Display.h"
 #include "Chip8Keyboard.h"
 
 #include <istream>
@@ -18,9 +19,6 @@ namespace chip8 {
 		enum : word {
 			STACK_DEPTH				= 0x20,
 			REGISTERS_COUNT			= 0x10,
-
-			FRAME_HEIGHT			= 0x20,
-			FRAME_WIDTH				= 0x40,
 
 			OFFSET_PROGRAM_START	= 0x200,
 			ADDRESS_SPACE_DEFAULT	= 0x1000,
@@ -44,12 +42,23 @@ namespace chip8 {
 			INTERPRETER_ERROR_UNEXPECTED
 		};
 
-		typedef byte(Frame)[FRAME_HEIGHT * FRAME_WIDTH];
+		
 	
 
-		Interpreter(IKeyPad *keyPad, word aluProfile = ALU_PROFILE_MODERN, size_t memorySize = ADDRESS_SPACE_DEFAULT);
+		Interpreter(
+			IDisplay *display,
+			IKeyPad *keyPad,
+
+			word aluProfile = ALU_PROFILE_MODERN, 
+			size_t memorySize = ADDRESS_SPACE_DEFAULT
+			);
 
 		~Interpreter();
+
+
+		Error getLastError() const {
+			return lastError;
+		}
 
 
 		void doCycle();
@@ -65,17 +74,6 @@ namespace chip8 {
 		void reset(std::istream &prgStream);
 
 
-		Frame &getFrame() {
-			frameUpdate = false;
-
-			return frame;
-		}
-
-		Error getLastError() const {
-			return lastError;
-		}
-
-
 		bool isPlayingSound() const {
 			return timers[TIMER_SOUND].value > 0;
 		}
@@ -85,7 +83,7 @@ namespace chip8 {
 		}
 
 		bool isFrameUpdated() const {
-			return frameUpdate;
+			return deviceDisplay->isInvalid();
 		}
 
 		bool isOk() const {
@@ -103,7 +101,8 @@ namespace chip8 {
 		Interpreter(const Interpreter&);
 
 
-		IKeyPad *deviceKeyPad;
+		IDisplay	*deviceDisplay;
+		IKeyPad		*deviceKeyPad;
 
 		Error lastError;
 
@@ -146,9 +145,6 @@ namespace chip8 {
 		
 		word stack[STACK_DEPTH];
 		byte registers[REGISTERS_COUNT];
-
-		Frame frame;
-		bool frameUpdate;
 
 		const size_t memorySize;
 		byte *memory;
@@ -203,7 +199,7 @@ namespace chip8 {
 		
 		size_t bcd(size_t idx);								// Store the value of register VX binary-decimal encoded within the memory located at [I, I + 1, I + 2].
 		
-		void flush();										// Clear the screen.
+		void cls();											// Clear screen.
 		void sprite(size_t idx, size_t idy, word value);	// Display a sprite on screen.
 		void sound(size_t idx);								// Set value of sound timer.
 		void delay(size_t idx);								// Set value of delay timer.
@@ -305,12 +301,6 @@ namespace chip8 {
 			}
 			const byte &getMemoryValue(word address) const {
 				return soc->memory[address];
-			}
-			const byte &getFrameValue(word x, word y) const {
-				return soc->frame[y * FRAME_WIDTH + x];
-			}
-			const byte &getFrameValue(word i) const {
-				return soc->frame[i];
 			}
 		};
 #endif // _DEBUG

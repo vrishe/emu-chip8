@@ -24,15 +24,19 @@ protected:
 		}
 	};
 
-	std::auto_ptr<MockPad> keyPad;
-	std::auto_ptr<Interpreter> interpreter;
+	std::auto_ptr<DefaultDisplay>	display;
+	std::auto_ptr<MockPad>			keypad;
+	std::auto_ptr<Interpreter>		interpreter;
 
 	Interpreter::Snapshot snapshot;
 	word aluProfileActive;
 
 	void SetUp() {
-		keyPad.reset(new MockPad);
-		interpreter.reset(new Interpreter(keyPad.get(), aluProfileActive));
+		display.reset(new DefaultDisplay);
+		keypad.reset(new MockPad);
+
+		interpreter.reset(new Interpreter(
+			display.get(), keypad.get(), aluProfileActive));
 
 		Interpreter::Snapshot::obtain(snapshot, *interpreter);
 	}
@@ -104,13 +108,21 @@ TEST_F(OriginalInterpreterTest, Opcode0NNN_2NNN) {
 	// Opcode 00e0
 	{
 		const byte program[] = { 0x00,0xE0 };
-		const Interpreter::Frame referenceFrame = { 0x00 };
+		const DefaultDisplay::Frame referenceFrame = { 0x00 };
+
+		rect invalidRect;
 
 		interpreter->reset(program, sizeof(program));
 
 		interpreter->doCycle();
-		ASSERT_TRUE(interpreter->isFrameUpdated());
-		EXPECT_EQ(0, memcmp(&snapshot.getFrameValue(0), referenceFrame, sizeof(Interpreter::Frame)));
+		ASSERT_TRUE(*display);
+		EXPECT_EQ(0, memcmp(*display, referenceFrame, sizeof(DefaultDisplay::Frame)));
+
+		display->getInvalidArea(invalidRect);
+		EXPECT_EQ(0, invalidRect.x);
+		EXPECT_EQ(0, invalidRect.y);
+		EXPECT_EQ(display->width(), invalidRect.w);
+		EXPECT_EQ(display->height(), invalidRect.h);
 
 		EXPECT_EQ(64, snapshot.getCountCycles());
 	}
@@ -623,7 +635,9 @@ TEST_F(OriginalInterpreterTest, OpcodeDXYN_6XNN_ANNN) {
 		// Sprite data below (offset 32 bytes):
 		0x99,0x42,0x3C,0xA5,0xA5,0x3C,0x42,0x99 
 	};
-	Interpreter::Frame referenceFrame = { 0x00 };
+	DefaultDisplay::Frame referenceFrame = { 0x00 };
+
+	rect invalidRect;
 
 	interpreter->reset(program, sizeof(program));
 
@@ -631,6 +645,7 @@ TEST_F(OriginalInterpreterTest, OpcodeDXYN_6XNN_ANNN) {
 	EXPECT_EQ(0x220, snapshot.getIndexValue());
 	EXPECT_EQ(0, memcmp(&snapshot.getMemoryValue(0x220), &program[32], 8));
 
+	display->validate();
 	interpreter->doCycle();
 	interpreter->doCycle();
 	interpreter->doCycle();
@@ -644,9 +659,17 @@ TEST_F(OriginalInterpreterTest, OpcodeDXYN_6XNN_ANNN) {
 		referenceFrame[385] = 0xFF; referenceFrame[390] = 0xFF;
 		referenceFrame[448] = 0xFF; referenceFrame[451] = 0xFF; referenceFrame[452] = 0xFF; referenceFrame[455] = 0xFF;
 	}
-	EXPECT_EQ(0, memcmp(&snapshot.getFrameValue(0), referenceFrame, sizeof(Interpreter::Frame)));
+	EXPECT_TRUE(*display);
+	EXPECT_EQ(0, memcmp(*display, referenceFrame, sizeof(DefaultDisplay::Frame)));
 	EXPECT_EQ(0x00, snapshot.getCarryValue());
 
+	display->getInvalidArea(invalidRect);
+	EXPECT_EQ(0, invalidRect.x);
+	EXPECT_EQ(0, invalidRect.y);
+	EXPECT_EQ(8, invalidRect.w);
+	EXPECT_EQ(8, invalidRect.h);
+
+	display->validate();
 	interpreter->doCycle();
 	interpreter->doCycle();
 	interpreter->doCycle();
@@ -660,9 +683,17 @@ TEST_F(OriginalInterpreterTest, OpcodeDXYN_6XNN_ANNN) {
 		referenceFrame[444] = 0xFF;
 		referenceFrame[507] = 0xFF; referenceFrame[510] = 0xFF; referenceFrame[511] = 0xFF;
 	}
-	EXPECT_EQ(0, memcmp(&snapshot.getFrameValue(0), referenceFrame, sizeof(Interpreter::Frame)));
+	EXPECT_TRUE(*display);
+	EXPECT_EQ(0, memcmp(*display, referenceFrame, sizeof(DefaultDisplay::Frame)));
 	EXPECT_EQ(0x00, snapshot.getCarryValue());
 
+	display->getInvalidArea(invalidRect);
+	EXPECT_EQ(0, invalidRect.x);
+	EXPECT_EQ(0, invalidRect.y);
+	EXPECT_EQ(5, invalidRect.w);
+	EXPECT_EQ(8, invalidRect.h);
+
+	display->validate();
 	interpreter->doCycle();
 	interpreter->doCycle();
 	interpreter->doCycle();
@@ -673,9 +704,17 @@ TEST_F(OriginalInterpreterTest, OpcodeDXYN_6XNN_ANNN) {
 		referenceFrame[1920] = 0xFF; referenceFrame[1922] = 0xFF; referenceFrame[1925] = 0xFF; referenceFrame[1927] = 0xFF;
 		referenceFrame[1984] = 0xFF; referenceFrame[1986] = 0xFF; referenceFrame[1989] = 0xFF; referenceFrame[1991] = 0xFF;
 	}
-	EXPECT_EQ(0, memcmp(&snapshot.getFrameValue(0), referenceFrame, sizeof(Interpreter::Frame)));
+	EXPECT_TRUE(*display);
+	EXPECT_EQ(0, memcmp(*display, referenceFrame, sizeof(DefaultDisplay::Frame)));
 	EXPECT_EQ(0x00, snapshot.getCarryValue());
 
+	display->getInvalidArea(invalidRect);
+	EXPECT_EQ(0, invalidRect.x);
+	EXPECT_EQ(0, invalidRect.y);
+	EXPECT_EQ(8, invalidRect.w);
+	EXPECT_EQ(5, invalidRect.h);
+
+	display->validate();
 	interpreter->doCycle();
 	interpreter->doCycle();
 	interpreter->doCycle();
@@ -686,9 +725,17 @@ TEST_F(OriginalInterpreterTest, OpcodeDXYN_6XNN_ANNN) {
 		referenceFrame[1979] = 0xFF; referenceFrame[1981] = 0xFF;
 		referenceFrame[2043] = 0xFF; referenceFrame[2045] = 0xFF;
 	}
-	EXPECT_EQ(0, memcmp(&snapshot.getFrameValue(0), referenceFrame, sizeof(Interpreter::Frame)));
+	EXPECT_TRUE(*display);
+	EXPECT_EQ(0, memcmp(*display, referenceFrame, sizeof(DefaultDisplay::Frame)));
 	EXPECT_EQ(0x00, snapshot.getCarryValue());
 
+	display->getInvalidArea(invalidRect);
+	EXPECT_EQ(0, invalidRect.x);
+	EXPECT_EQ(0, invalidRect.y);
+	EXPECT_EQ(5, invalidRect.w);
+	EXPECT_EQ(5, invalidRect.h);
+
+	display->validate();
 	interpreter->doCycle();
 	interpreter->doCycle();
 	interpreter->doCycle();
@@ -702,8 +749,15 @@ TEST_F(OriginalInterpreterTest, OpcodeDXYN_6XNN_ANNN) {
 		referenceFrame[385] = 0x00; referenceFrame[390] = 0x00;
 		referenceFrame[448] = 0x00; referenceFrame[451] = 0x00; referenceFrame[452] = 0x00; referenceFrame[455] = 0x00;
 	}
-	EXPECT_EQ(0, memcmp(&snapshot.getFrameValue(0), referenceFrame, sizeof(Interpreter::Frame)));
+	EXPECT_TRUE(*display);
+	EXPECT_EQ(0, memcmp(*display, referenceFrame, sizeof(DefaultDisplay::Frame)));
 	EXPECT_EQ(0x01, snapshot.getCarryValue());
+
+	display->getInvalidArea(invalidRect);
+	EXPECT_EQ(0, invalidRect.x);
+	EXPECT_EQ(0, invalidRect.y);
+	EXPECT_EQ(8, invalidRect.w);
+	EXPECT_EQ(8, invalidRect.h);
 
 	EXPECT_EQ(11320, snapshot.getCountCycles());
 }
@@ -712,11 +766,11 @@ TEST_F(OriginalInterpreterTest, OpcodeEX9E_EXA1_6XNN) {
 	const byte program[] = { 0x6E,0x06, 0xEE,0x9E, 0x6E,0x00, 0x12,0x00 };
 
 	interpreter->reset(program, sizeof(program));
-	keyPad->setState(PadKeys::KEY_NONE);
+	keypad->setState(PadKeys::KEY_NONE);
 
 	// Opcode EX9E \w 6XNN (True)
 	{
-		keyPad->setState(PadKeys::KEY_6);
+		keypad->setState(PadKeys::KEY_6);
 		interpreter->doCycle();
 		EXPECT_EQ(0x06, snapshot.getRegisterValue(14));
 
@@ -730,7 +784,7 @@ TEST_F(OriginalInterpreterTest, OpcodeEX9E_EXA1_6XNN) {
 
 	// Opcode EX9E \w 6XNN (True)
 	{
-		keyPad->setState(PadKeys::KEY_NONE);
+		keypad->setState(PadKeys::KEY_NONE);
 		interpreter->doCycle();
 		EXPECT_EQ(0x06, snapshot.getRegisterValue(14));
 
@@ -772,7 +826,7 @@ TEST_F(OriginalInterpreterTest, OpcodeFXNN_6XNN_ANNN) {
 		const byte program[] = { 0x60,0x0A, 0xF0,0x0A, 0x12,0x00 };
 
 		interpreter->reset(program, sizeof(program));
-		keyPad->setState(PadKeys::KEY_NONE);
+		keypad->setState(PadKeys::KEY_NONE);
 
 		interpreter->doCycle();
 		EXPECT_EQ(0x0A, snapshot.getRegisterValue(0));
@@ -781,12 +835,12 @@ TEST_F(OriginalInterpreterTest, OpcodeFXNN_6XNN_ANNN) {
 		ASSERT_TRUE(interpreter->isKeyAwaited());
 		EXPECT_EQ(0x00, snapshot.getKeyHaltRegister());
 
-		keyPad->setState(PadKeys::KEY_A);
+		keypad->setState(PadKeys::KEY_A);
 		interpreter->doCycle();
 		interpreter->doCycle();
 		interpreter->doCycle();
 
-		keyPad->setState(PadKeys::KEY_NONE);
+		keypad->setState(PadKeys::KEY_NONE);
 		interpreter->doCycle();
 		ASSERT_FALSE(interpreter->isKeyAwaited());
 		EXPECT_EQ(Interpreter::OFFSET_PROGRAM_START, snapshot.getProgramCounterValue());

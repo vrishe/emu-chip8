@@ -23,16 +23,11 @@ void InterpretationThread::run() {
 			task->perform();
 			task.reset();
 		}
-		if (!waitFrameUpdate) {
-			if (interpreter->isOk()) {
-				if (interpreter->isFrameUpdated()) {
-					waitFrameUpdate = true;
+		if (interpreter->isOk()) {
+			interpreter->doCycle();
 
-					PostMessage(hwndOwner, WM_USER_INTERPRETATION, 0, (LPARAM)this);
-				}
-				else {
-					interpreter->doCycle();
-				}
+			if (interpreter->isFrameUpdated()) {
+				PostMessage(hwndOwner, WM_USER_INTERPRETATION, 0, (LPARAM)this);
 			}
 		}
 	}
@@ -134,13 +129,4 @@ void InterpretationThread::stop() {
 
 		runner.join();
 	}
-}
-
-
-const chip8::Interpreter::Frame &InterpretationThread::beginFrameUpdate() {
-	return interpreter->getFrame();
-}
-
-void InterpretationThread::endFrameUpdate() {
-	waitFrameUpdate = false;
 }

@@ -7,6 +7,9 @@ namespace chip8 {
 
 	typedef unsigned char	byte, *pbyte;
 	typedef unsigned short	word, *pword;
+	typedef struct rect_ {
+		byte x, y, w, h;
+	} rect, *prect;
 
 } // namespace chip8
 
