@@ -206,6 +206,14 @@ namespace chip8 {
 		}
 	}
 
+	void Interpreter::reset() {
+		if (isOk()) {
+			reset_impl();
+
+			lastError = INTERPRETER_ERROR_OK;
+		}
+	}
+
 	void Interpreter::reset_impl() {
 		cls();
 
@@ -233,6 +241,8 @@ namespace chip8 {
 
 
 #define TIMER_TICK_CYCLES size_t(29333)
+#define TIMER_TICKS(cycles) \
+	(((cycles) / TIMER_TICK_CYCLES) * TIMER_TICK_CYCLES)
 
 	void Interpreter::refreshTimers() {
 		onTick(TIMER_DELAY);
@@ -242,13 +252,13 @@ namespace chip8 {
 	void Interpreter::onTick(word timerId) {
 		countdown_timer &timer = timers[timerId];
 
-		if (timer.value > 0 && countCycles >= timer.timestamp) {
-			size_t difference = (countCycles - timer.timestamp);
-			size_t diffDiv = difference / TIMER_TICK_CYCLES;
-			size_t diffMod = difference % TIMER_TICK_CYCLES;
+		if (timer.value > 0) {
+			size_t timerCyclesCount = TIMER_TICKS(countCycles);
 
-			timer.value -= diffDiv > 1 ? diffDiv : 1;
-			timer.timestamp = countCycles - diffMod + TIMER_TICK_CYCLES;
+			if (timer.timestamp == timerCyclesCount) {
+				timer.timestamp = timerCyclesCount + TIMER_TICK_CYCLES;
+				timer.value--;				
+			}
 		}
 	}
 
@@ -492,11 +502,11 @@ namespace chip8 {
 		word reg = READ_REGISTER(idx);
 
 		timers[TIMER_SOUND].value = reg > 1 ? reg : 0;
-		timers[TIMER_SOUND].timestamp = countCycles + TIMER_TICK_CYCLES;
+		timers[TIMER_SOUND].timestamp = TIMER_TICKS(countCycles) + TIMER_TICK_CYCLES;
 	}
 	inline void Interpreter::delay(size_t idx) {
 		timers[TIMER_DELAY].value = READ_REGISTER(idx);
-		timers[TIMER_DELAY].timestamp = countCycles + TIMER_TICK_CYCLES;
+		timers[TIMER_DELAY].timestamp = TIMER_TICKS(countCycles) + TIMER_TICK_CYCLES;
 	}
 	inline void Interpreter::key(size_t idx) {
 		keyHaltRegister = idx;

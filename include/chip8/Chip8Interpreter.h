@@ -60,18 +60,20 @@ namespace chip8 {
 			return lastError;
 		}
 
+		size_t getCyclesCount() const {
+			return countCycles;
+		}
 
 		void doCycle();
 
-		void reset() {
-			reset_impl();
-		}
+
 		template <size_t prgLen>
 		void reset(const byte(&prg)[prgLen]) {
 			reset(prg, prgLen);
 		}
 		void reset(const byte *prg, size_t prgLen);
 		void reset(std::istream &prgStream);
+		void reset();
 
 
 		bool isPlayingSound() const {
@@ -80,10 +82,6 @@ namespace chip8 {
 
 		bool isKeyAwaited() const {
 			return keyHaltRegister != KEY_HALT_UNSET;
-		}
-
-		bool isFrameUpdated() const {
-			return deviceDisplay->isInvalid();
 		}
 
 		bool isOk() const {

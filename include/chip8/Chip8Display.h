@@ -26,6 +26,9 @@ namespace chip8 {
 		operator bool() const {
 			return isInvalid();
 		}
+		operator bool() {
+			return isInvalid();
+		}
 		virtual operator byte*() {
 			return getLine(0, 0);
 		}
@@ -48,24 +51,30 @@ namespace chip8 {
 
 	class DefaultDisplay : public DisplayBase {		
 
+		byte w, h;
+		word a;
+
+		byte *buffer;
+
 	public:
 
 		enum : byte {
 			FRAME_HEIGHT = 0x20,
-			FRAME_WIDTH  = 0x40
+			FRAME_WIDTH = 0x40
 		};
 
-		typedef byte(Frame)[FRAME_WIDTH * FRAME_HEIGHT];
+
+		DefaultDisplay(byte width = FRAME_WIDTH, byte height = FRAME_HEIGHT);
+
+		virtual ~DefaultDisplay();
+
+
 
 		word area() const;
 		byte width() const;
 		byte height() const;
 
 		byte *getLine(byte index, byte offset);
-
-	private:
-
-		Frame frame;
 	};
 
 } // namespace chip8

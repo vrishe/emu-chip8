@@ -26,13 +26,7 @@
     <ClInclude Include="main.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="interpretation.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="string.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="RingBufferedDisplay.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="VKMappedKeyPad.h">
@@ -47,9 +41,6 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="main.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="interpretation.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="string.cpp">

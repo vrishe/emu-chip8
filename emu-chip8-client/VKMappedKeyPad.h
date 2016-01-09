@@ -40,9 +40,12 @@ namespace platform {
 		void updateKey(UINT vk, BOOL fDown) {
 			assert(vk < sizeof(map));
 
-			auto result = map[vk];
-
-			if (result != kbstate) {
+			chip8::PadKeys result = map[vk], reference = kbstate;
+			{
+				result = chip8::PadKeys(fDown 
+					? (reference | result) : (reference ^ result));
+			}
+			if (result != reference) {
 				kbstate = result;
 			}
 		}

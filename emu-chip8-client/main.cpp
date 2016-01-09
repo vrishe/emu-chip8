@@ -7,15 +7,71 @@
 #include "chip8\Chip8Display.h"
 
 #include "main.h"
-#include "interpretation.h"
-#include "RingBufferedDisplay.h"
 #include "VKMappedKeyPad.h"
 
 
-static platform::RingBufferedDisplay<8>	defaultDisplay;
-static platform::VKMappedKeypad			defaultKeypad;
+#define SCREEN_ASPECT_X 10
+#define SCREEN_ASPECT_Y 10
+
+#define DISPLAY_WINDOW_WIDTH  (chip8::DefaultDisplay::FRAME_WIDTH  * SCREEN_ASPECT_X)
+#define DISPLAY_WINDOW_HEIGHT (chip8::DefaultDisplay::FRAME_HEIGHT * SCREEN_ASPECT_Y)
+
+static chip8::DefaultDisplay	defaultDisplay;
+static platform::VKMappedKeypad	defaultKeypad;
 
 static chip8::Interpreter machine(&defaultDisplay, &defaultKeypad);
+
+#define WM_INTERPRETER (WM_USER + 1024)
+#define HANDLE_WM_INTERPRETER(hwnd, wParam, lParam, fn) \
+    ((fn)((hwnd), (UINT)LOWORD(wParam)), 0L)
+
+#define MACHINE_STATE_IDLE		0
+#define MACHINE_STATE_RUNNING	1
+
+
+static bool running;
+
+static void EnterInterpretationLoop(HWND hWnd) {
+	running = true;
+
+	MSG msg;
+	const LPMSG lpMsg = &msg;
+
+	chip8::rect invalidRect;
+
+	while (running) {
+		if (PeekMessage(lpMsg, hWnd, 0, 0, PM_REMOVE)) {
+			TranslateMessage(lpMsg);
+			DispatchMessage(lpMsg);
+		}
+		if (machine.isOk()) {
+			machine.doCycle();
+
+			if ((bool)defaultDisplay) {
+				defaultDisplay.getInvalidArea(invalidRect);
+
+				glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+				glPixelStorei(GL_UNPACK_ROW_LENGTH, defaultDisplay.width());
+				glTexSubImage2D(GL_TEXTURE_2D, 0, invalidRect.x, invalidRect.y, 
+					invalidRect.w, invalidRect.h, GL_RED, GL_UNSIGNED_BYTE, defaultDisplay.getLine(invalidRect.y, invalidRect.x));
+
+				RECT dirtyRect = {
+					dirtyRect.left = invalidRect.x * SCREEN_ASPECT_X,
+					dirtyRect.top = invalidRect.y * SCREEN_ASPECT_Y,
+					dirtyRect.right = (invalidRect.x + invalidRect.w) * SCREEN_ASPECT_X,
+					dirtyRect.bottom = (invalidRect.y + invalidRect.h) * SCREEN_ASPECT_Y
+				};
+				InvalidateRect(hWnd, &dirtyRect, FALSE);
+
+				defaultDisplay.validate();
+			}
+		}
+	}
+}
+
+static void ExitInterpretetionLoop() {
+	running = false;
+}
 
 
 #define DISPLAY_PIXEL_COLOR { 0.0f, 0.6549f, 0.0f, 1.0f }
@@ -30,8 +86,6 @@ typedef struct tagChip8DisplayExtra {
 	GLuint screenShaderV;
 	GLuint screenShaderF;
 	GLuint screenShaderPrg;
-
-	InterpretationThread *interpreter;
 } Chip8DisplayExtra;
 
 typedef struct tagPoint2D {
@@ -212,7 +266,6 @@ static void DrawGLScene(Chip8DisplayExtra *extra) {
 static BOOL Chip8DisplayCreate(HWND hWnd, LPCREATESTRUCT lpCreateStruct) {
 	auto extra = new Chip8DisplayExtra;
 	{
-		extra->interpreter = new InterpretationThread(hWnd, &machine);
 		extra->hDC = GetDC(hWnd);
 
 		CreateGLContext(extra);
@@ -234,9 +287,9 @@ static VOID Chip8DisplayDestroy(HWND hWnd) {
 		DestroyGLContext(extra);
 
 		ReleaseDC(hWnd, extra->hDC);
-		delete extra->interpreter;
-		delete extra;
 	}
+	delete extra;
+
 	PostQuitMessage(0);
 }
 
@@ -324,17 +377,14 @@ static VOID Chip8DisplayCommand(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify
 				ofn.lpstrFile = new TCHAR[ofn.nMaxFile + 1];
 				ofn.lpstrFile[0] = _T('\0');
 			}
-			auto needPause = !extra->interpreter->isPaused();
-
-			if (needPause) {
-				extra->interpreter->pause();
+			if (machine.isOk()) {
+				SendMessage(hWnd, WM_INTERPRETER, MACHINE_STATE_IDLE, 0);
 			}
 			if (GetOpenFileName(&ofn)) {
-				extra->interpreter->start(ofn.lpstrFile);
+				machine.reset(std::ifstream(ofn.lpstrFile, std::ios_base::binary));
 			}
-			else if (needPause) {
-				extra->interpreter->pause();
-			}
+			PostMessage(hWnd, WM_INTERPRETER, MACHINE_STATE_RUNNING, 0);
+
 			delete[] ofn.lpstrFile;
 
 			HMENU hMenu = GetMenu(hWnd);
@@ -346,35 +396,57 @@ static VOID Chip8DisplayCommand(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify
 			break;
 		}
 		case ID_FILE_RESET:
-			extra->interpreter->reset();
+			machine.reset();
 
 			CheckMenuItem(GetMenu(hWnd), ID_FILE_PAUSE, MF_UNCHECKED);
 			break;
 		case ID_FILE_PAUSE:
 		{
-			extra->interpreter->pause();
+			auto hMenu = GetMenu(hWnd);
+			{
+				MENUITEMINFO mi;
+				{
+					mi.cbSize = sizeof(MENUITEMINFO);
+					mi.fMask = MIIM_STATE;
+				}
+				assert(GetMenuItemInfo(hMenu, ID_FILE_PAUSE, FALSE, &mi));
 
-			CheckMenuItem(GetMenu(hWnd), ID_FILE_PAUSE, 
-				extra->interpreter->isPaused() ? MF_CHECKED : MF_UNCHECKED);
+				if (mi.fState & MFS_CHECKED) {
+					PostMessage(hWnd, WM_INTERPRETER, MACHINE_STATE_RUNNING, 0);
+
+					CheckMenuItem(hMenu, ID_FILE_PAUSE, MF_UNCHECKED);
+				}
+				else {
+					PostMessage(hWnd, WM_INTERPRETER, MACHINE_STATE_IDLE, 0);
+
+					CheckMenuItem(hMenu, ID_FILE_PAUSE, MF_CHECKED);
+				}
+			}
 			break;
 		}
 		case ID_FILE_EXIT:
-			extra->interpreter->stop();
+			SendMessage(hWnd, WM_INTERPRETER, MACHINE_STATE_IDLE, 0);
+
 			DestroyWindow(hWnd);
 			break;
 		}
 	}
 }
 
-static void Chip8DisplayKeyUpDown(HWND hwnd, UINT vk, BOOL fDown, int cRepeat, UINT flags) {
+static VOID Chip8DisplayKeyUpDown(HWND hwnd, UINT vk, BOOL fDown, int cRepeat, UINT flags) {
 	defaultKeypad.updateKey(vk, fDown);
 }
 
-static void Chip8DisplayUserInterpretation(HWND hWnd, InterpretationThread *interpreter) {
-	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, defaultDisplay.width(),
-		defaultDisplay.height(), GL_RED, GL_UNSIGNED_BYTE, defaultDisplay.consume());
+static VOID Chip8DisplayInterpreter(HWND hWnd, UINT mState) {
+	switch (mState) {
+	case MACHINE_STATE_RUNNING:
+		EnterInterpretationLoop(hWnd);
+		break;
 
-	InvalidateRect(hWnd, NULL, FALSE);
+	case MACHINE_STATE_IDLE:
+		ExitInterpretetionLoop();
+		break;
+	}
 }
 
 static LRESULT CALLBACK Chip8DisplayWndProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam) {
@@ -386,7 +458,7 @@ static LRESULT CALLBACK Chip8DisplayWndProc(HWND hWnd, UINT Msg, WPARAM wParam, 
 		HANDLE_MSG(hWnd, WM_COMMAND, Chip8DisplayCommand);
 		HANDLE_MSG(hWnd, WM_KEYDOWN, Chip8DisplayKeyUpDown);
 		HANDLE_MSG(hWnd, WM_KEYUP, Chip8DisplayKeyUpDown);
-		HANDLE_MSG(hWnd, WM_USER_INTERPRETATION, Chip8DisplayUserInterpretation);
+		HANDLE_MSG(hWnd, WM_INTERPRETER, Chip8DisplayInterpreter);
 	};
 	return DefWindowProc(hWnd, Msg, wParam, lParam);
 }
@@ -482,7 +554,7 @@ DWORD CALLBACK ApplicationInitialization(HINSTANCE hInst, int nCmdShow) {
 
 	auto windowStyle = WS_OVERLAPPEDWINDOW & ~(WS_SIZEBOX | WS_MAXIMIZEBOX);
 
-	RECT windowRect = { 0, 0, 640, 320 };
+	RECT windowRect = { 0, 0, DISPLAY_WINDOW_WIDTH, DISPLAY_WINDOW_HEIGHT };
 	AdjustWindowRect(&windowRect, windowStyle, TRUE);
 
 	HWND hWnd = CreateWindow(wc.lpszClassName, _T("CHIP-8"), windowStyle, CW_USEDEFAULT, 0, 

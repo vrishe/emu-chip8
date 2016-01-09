@@ -1,5 +1,8 @@
 #include "chip8\Chip8Display.h"
 
+#include <cassert>
+
+
 namespace chip8 {
 
 	void DisplayBase::validate() {
@@ -15,8 +18,8 @@ namespace chip8 {
 		invalid = true;
 	}
 	void DisplayBase::invalidate(byte x, byte y, byte w, byte h) {
-		invalidArea.x = 0;
-		invalidArea.y = 0;
+		invalidArea.x = x;
+		invalidArea.y = y;
 		invalidArea.w = w;
 		invalidArea.h = h;
 
@@ -33,21 +36,33 @@ namespace chip8 {
 	}
 
 
+	DefaultDisplay::DefaultDisplay(byte width, byte height)
+		: w(width), h(height), a(width * height) {
+
+		assert(a > 0);
+		buffer = new byte[a];
+	}
+
+	DefaultDisplay::~DefaultDisplay() {
+		delete[] buffer;
+	}
+
+
 	word DefaultDisplay::area() const {
-		return FRAME_WIDTH * FRAME_HEIGHT;
+		return a;
 	}
 
 	byte DefaultDisplay::width() const {
-		return FRAME_WIDTH;
+		return w;
 	}
 
 	byte DefaultDisplay::height() const {
-		return FRAME_HEIGHT;
+		return h;
 	}
 
 
 	byte *DefaultDisplay::getLine(byte index, byte offset) {
-		return frame + index * FRAME_WIDTH + offset;
+		return buffer + index * w + offset;
 	}
 
 } // namespace chip8
