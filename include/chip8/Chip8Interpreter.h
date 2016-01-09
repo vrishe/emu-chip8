@@ -130,6 +130,7 @@ namespace chip8 {
 
 		countdown_timer timers[2];
 		size_t countCycles;
+		size_t throttleCycles;
 
 		size_t sp;
 		size_t keyHaltRegister;

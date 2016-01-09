@@ -100,50 +100,56 @@ namespace chip8 {
 	void Interpreter::doCycle() {
 		assert(isOk());
 
-		// TODO: it may be allowed to have no keypad in future.
-		PadKeys kbState = deviceKeyPad->getState();
+		if (throttleCycles == 0) {
+			// TODO: it may be allowed to have no keypad in future.
+			PadKeys kbState = deviceKeyPad->getState();
 
-		if (isKeyAwaited()) {
-			auto &timer = timers[TIMER_SOUND];
+			if (isKeyAwaited()) {
+				auto &timer = timers[TIMER_SOUND];
 
-			// This check allows to trigger this method on each loop pass.
-			// So, simply there's no need to track keyboard hit externally.
-			if (kbState == KEY_NONE && kb != KEY_NONE) {
+				// This check allows to trigger this method on each loop pass.
+				// So, simply there's no need to track keyboard hit externally.
+				if (kbState == KEY_NONE && kb != KEY_NONE) {
 
-				byte keyIdx = 0;
-				while (((kb >> keyIdx) & 0x01) == 0) {
-					++keyIdx;
+					byte keyIdx = 0;
+					while (((kb >> keyIdx) & 0x01) == 0) {
+						++keyIdx;
+					}
+					registers[keyHaltRegister] = keyIdx;
+					keyHaltRegister = KEY_HALT_UNSET;
+
+					// Reset timer sound as it will be overridden by kbState hit await routine.
+					timer.value = 0;
 				}
-				registers[keyHaltRegister] = keyIdx;
-				keyHaltRegister = KEY_HALT_UNSET;
-
-				// Reset timer sound as it will be overridden by kbState hit await routine.
-				timer.value = 0;
-			} 
-			else {
-				// Continue beep'ing until kbState is not released.
-				if (timer.value == 0) {
-					timer.value = 4;
+				else {
+					// Continue beep'ing until kbState is not released.
+					if (timer.value == 0) {
+						timer.value = 4;
+					}
 				}
+				// This branch is responsile for kbState debounce emulation.
+				// Not sure, it'll take just 9 cycles.
+				//
+				// See: http://laurencescotford.co.uk/?p=347 for details.
+				throttleCycles = 9;
 			}
-			// This branch is responsile for kbState debounce emulation.
-			// Not sure, it'll take just 9 cycles.
-			//
-			// See: http://laurencescotford.co.uk/?p=347 for details.
-			countCycles += 9;
+			kb = kbState;
+
+			if (!isKeyAwaited()) {
+				Opcode opcode = *reinterpret_cast<Opcode *>(const_cast<byte*>(
+					FETCH_OPCODE(pc, OFFSET_PROGRAM_START, memorySize)));
+
+				pc += PROGRAM_COUNTER_STEP;
+				throttleCycles = (this->*Interpreter::macroCodesLUT[EXTRACT_OP(opcode)]) (opcode);
+
+				++rndSeed;
+			}
+			refreshTimers();
 		}
-		kb = kbState;
-
-		if (!isKeyAwaited()) {
-			Opcode opcode = *reinterpret_cast<Opcode *>(const_cast<byte*>(
-				FETCH_OPCODE(pc, OFFSET_PROGRAM_START, memorySize)));
-
-			pc += PROGRAM_COUNTER_STEP;
-			countCycles += (this->*Interpreter::macroCodesLUT[EXTRACT_OP(opcode)]) (opcode);
-
-			++rndSeed;
+		else {
+			--throttleCycles;
 		}
-		refreshTimers();
+		++countCycles;
 	}
 
 
@@ -227,6 +233,7 @@ namespace chip8 {
 		timers[TIMER_SOUND].timestamp = TIMESTAMP_UNDEFINED;
 
 		countCycles = 0;
+		throttleCycles = 0;
 
 		sp = STACK_DEPTH;
 		keyHaltRegister = KEY_HALT_UNSET;
@@ -240,7 +247,13 @@ namespace chip8 {
 	}
 
 
-#define TIMER_TICK_CYCLES size_t(29333)
+	// This value is obtained like this:
+	//
+	// Each machine cycle took 8 clock cycles on RCA1802
+	// Machine instructions take 2 to 3 machine cycles, so it takes 20 machine cycles in average.
+	// We know that COSMAC VIP operated on 1.76MHz, thus it processed 1760000 / 20 ~ 88000 instructions per second.
+	// Timer ticks at rate of 60Hz, so 88000 / 60 ~ 1467.
+#define TIMER_TICK_CYCLES size_t(1467)
 #define TIMER_TICKS(cycles) \
 	(((cycles) / TIMER_TICK_CYCLES) * TIMER_TICK_CYCLES)
 
@@ -252,13 +265,9 @@ namespace chip8 {
 	void Interpreter::onTick(word timerId) {
 		countdown_timer &timer = timers[timerId];
 
-		if (timer.value > 0) {
-			size_t timerCyclesCount = TIMER_TICKS(countCycles);
-
-			if (timer.timestamp == timerCyclesCount) {
-				timer.timestamp = timerCyclesCount + TIMER_TICK_CYCLES;
-				timer.value--;				
-			}
+		if (timer.value > 0 && countCycles >= timer.timestamp) {
+			timer.timestamp += TIMER_TICK_CYCLES;
+			timer.value--;				
 		}
 	}
 
@@ -506,7 +515,7 @@ namespace chip8 {
 	}
 	inline void Interpreter::delay(size_t idx) {
 		timers[TIMER_DELAY].value = READ_REGISTER(idx);
-		timers[TIMER_DELAY].timestamp = TIMER_TICKS(countCycles) + TIMER_TICK_CYCLES;
+		timers[TIMER_DELAY].timestamp = countCycles + TIMER_TICK_CYCLES + 72;
 	}
 	inline void Interpreter::key(size_t idx) {
 		keyHaltRegister = idx;
