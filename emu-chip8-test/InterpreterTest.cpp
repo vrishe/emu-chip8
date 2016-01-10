@@ -24,6 +24,8 @@ protected:
 		}
 	};
 
+	typedef byte(Frame)[DefaultDisplay::FRAME_WIDTH * DefaultDisplay::FRAME_HEIGHT];
+
 	std::auto_ptr<DefaultDisplay>	display;
 	std::auto_ptr<MockPad>			keypad;
 	std::auto_ptr<Interpreter>		interpreter;
@@ -73,9 +75,9 @@ TEST_F(OriginalInterpreterTest, Initialization) {
 		interpreter->reset(std::ifstream("15PUZZLE"));
 
 		EXPECT_TRUE(*interpreter);
+		EXPECT_EQ(0, interpreter->getCyclesCount());
 		EXPECT_EQ(0, snapshot.getTimerDelay());
 		EXPECT_EQ(0, snapshot.getTimerSound());
-		EXPECT_EQ(0ull, snapshot.getCountCycles());
 		EXPECT_EQ(Interpreter::STACK_DEPTH, snapshot.getStackPointer());
 		EXPECT_LE(Interpreter::REGISTERS_COUNT, snapshot.getKeyHaltRegister());
 		EXPECT_EQ(0, snapshot.getCarryValue());
@@ -108,7 +110,7 @@ TEST_F(OriginalInterpreterTest, Opcode0NNN_2NNN) {
 	// Opcode 00e0
 	{
 		const byte program[] = { 0x00,0xE0 };
-		const DefaultDisplay::Frame referenceFrame = { 0x00 };
+		const Frame referenceFrame = { 0x00 };
 
 		rect invalidRect;
 
@@ -116,7 +118,7 @@ TEST_F(OriginalInterpreterTest, Opcode0NNN_2NNN) {
 
 		interpreter->doCycle();
 		ASSERT_TRUE(*display);
-		EXPECT_EQ(0, memcmp(*display, referenceFrame, sizeof(DefaultDisplay::Frame)));
+		EXPECT_EQ(0, memcmp(*display, referenceFrame, sizeof(Frame)));
 
 		display->getInvalidArea(invalidRect);
 		EXPECT_EQ(0, invalidRect.x);
@@ -124,7 +126,7 @@ TEST_F(OriginalInterpreterTest, Opcode0NNN_2NNN) {
 		EXPECT_EQ(display->width(), invalidRect.w);
 		EXPECT_EQ(display->height(), invalidRect.h);
 
-		EXPECT_EQ(64, snapshot.getCountCycles());
+		EXPECT_EQ(64, interpreter->getCyclesCount());
 	}
 	// Opcode 00e0 \w 2NNN
 	{
@@ -138,7 +140,7 @@ TEST_F(OriginalInterpreterTest, Opcode0NNN_2NNN) {
 		interpreter->doCycle();
 		EXPECT_EQ(Interpreter::OFFSET_PROGRAM_START + 2, snapshot.getProgramCounterValue());
 
-		EXPECT_EQ(144, snapshot.getCountCycles());
+		EXPECT_EQ(144, interpreter->getCyclesCount());
 	}
 }
 
@@ -153,7 +155,7 @@ TEST_F(OriginalInterpreterTest, Opcode1NNN) {
 	interpreter->doCycle();
 	EXPECT_EQ(Interpreter::OFFSET_PROGRAM_START, snapshot.getProgramCounterValue());
 	
-	EXPECT_EQ(160, snapshot.getCountCycles());
+	EXPECT_EQ(160, interpreter->getCyclesCount());
 }
 
 TEST_F(OriginalInterpreterTest, Opcode3XNN_4XNN_6XNN_1NNN) {
@@ -173,7 +175,7 @@ TEST_F(OriginalInterpreterTest, Opcode3XNN_4XNN_6XNN_1NNN) {
 		EXPECT_EQ(0xBE, snapshot.getRegisterValue(5));
 		EXPECT_EQ(Interpreter::OFFSET_PROGRAM_START, snapshot.getProgramCounterValue());
 		
-		EXPECT_EQ(236, snapshot.getCountCycles());
+		EXPECT_EQ(236, interpreter->getCyclesCount());
 	}
 	// Opcode 3XNN \w 6XNN & 1NNN (False)
 	{
@@ -194,7 +196,7 @@ TEST_F(OriginalInterpreterTest, Opcode3XNN_4XNN_6XNN_1NNN) {
 		EXPECT_EQ(0x00, snapshot.getRegisterValue(5));
 		EXPECT_EQ(Interpreter::OFFSET_PROGRAM_START, snapshot.getProgramCounterValue());
 		
-		EXPECT_EQ(306, snapshot.getCountCycles());
+		EXPECT_EQ(306, interpreter->getCyclesCount());
 	}
 	// Opcode 4XNN \w 6XNN & 1NNN (True)
 	{
@@ -212,7 +214,7 @@ TEST_F(OriginalInterpreterTest, Opcode3XNN_4XNN_6XNN_1NNN) {
 		EXPECT_EQ(0xBE, snapshot.getRegisterValue(5));
 		EXPECT_EQ(Interpreter::OFFSET_PROGRAM_START, snapshot.getProgramCounterValue());
 
-		EXPECT_EQ(236, snapshot.getCountCycles());
+		EXPECT_EQ(236, interpreter->getCyclesCount());
 	}
 	// Opcode 4XNN \w 6XNN & 1NNN (False)
 	{
@@ -233,7 +235,7 @@ TEST_F(OriginalInterpreterTest, Opcode3XNN_4XNN_6XNN_1NNN) {
 		EXPECT_EQ(0x00, snapshot.getRegisterValue(5));
 		EXPECT_EQ(Interpreter::OFFSET_PROGRAM_START, snapshot.getProgramCounterValue());
 
-		EXPECT_EQ(306, snapshot.getCountCycles());
+		EXPECT_EQ(306, interpreter->getCyclesCount());
 	}
 }
 
@@ -262,7 +264,7 @@ TEST_F(OriginalInterpreterTest, Opcode5XY0_9XY0_6XNN_1NNN) {
 		interpreter->doCycle();
 		EXPECT_EQ(Interpreter::OFFSET_PROGRAM_START, snapshot.getProgramCounterValue());
 
-		EXPECT_EQ(462, snapshot.getCountCycles());
+		EXPECT_EQ(462, interpreter->getCyclesCount());
 	}
 	// Opcode 5XY0 \w 6XNN & 1NNN (False)
 	{
@@ -286,7 +288,7 @@ TEST_F(OriginalInterpreterTest, Opcode5XY0_9XY0_6XNN_1NNN) {
 		interpreter->doCycle();
 		EXPECT_EQ(Interpreter::OFFSET_PROGRAM_START, snapshot.getProgramCounterValue());
 
-		EXPECT_EQ(390, snapshot.getCountCycles());
+		EXPECT_EQ(390, interpreter->getCyclesCount());
 	}
 	// Opcode 9XY0 \w 6XNN & 1NNN (True)
 	{
@@ -312,7 +314,7 @@ TEST_F(OriginalInterpreterTest, Opcode5XY0_9XY0_6XNN_1NNN) {
 		interpreter->doCycle();
 		EXPECT_EQ(Interpreter::OFFSET_PROGRAM_START, snapshot.getProgramCounterValue());
 
-		EXPECT_EQ(462, snapshot.getCountCycles());
+		EXPECT_EQ(462, interpreter->getCyclesCount());
 	}
 	// Opcode 9XY0 \w 6XNN & 1NNN (False)
 	{
@@ -336,7 +338,7 @@ TEST_F(OriginalInterpreterTest, Opcode5XY0_9XY0_6XNN_1NNN) {
 		interpreter->doCycle();
 		EXPECT_EQ(Interpreter::OFFSET_PROGRAM_START, snapshot.getProgramCounterValue());
 
-		EXPECT_EQ(390, snapshot.getCountCycles());
+		EXPECT_EQ(390, interpreter->getCyclesCount());
 	}
 }
 
@@ -357,7 +359,7 @@ TEST_F(OriginalInterpreterTest, Opcode7XNN_6XNN_1NNN) {
 	EXPECT_EQ(0x00, snapshot.getRegisterValue(10));
 	EXPECT_EQ(Interpreter::OFFSET_PROGRAM_START, snapshot.getProgramCounterValue());
 
-	EXPECT_EQ(312, snapshot.getCountCycles());
+	EXPECT_EQ(312, interpreter->getCyclesCount());
 }
 
 TEST_F(OriginalInterpreterTest, Opcode8XYN_6XNN) {
@@ -373,7 +375,7 @@ TEST_F(OriginalInterpreterTest, Opcode8XYN_6XNN) {
 		interpreter->doCycle();
 		EXPECT_EQ(0xAA, snapshot.getRegisterValue(3));
 
-		EXPECT_EQ(154, snapshot.getCountCycles());
+		EXPECT_EQ(154, interpreter->getCyclesCount());
 	}
 	// Opcode 8XY1
 	{
@@ -390,7 +392,7 @@ TEST_F(OriginalInterpreterTest, Opcode8XYN_6XNN) {
 		interpreter->doCycle();
 		EXPECT_EQ(0xFF, snapshot.getRegisterValue(3));
 
-		EXPECT_EQ(260, snapshot.getCountCycles());
+		EXPECT_EQ(260, interpreter->getCyclesCount());
 	}
 	// Opcode 8XY2
 	{
@@ -407,7 +409,7 @@ TEST_F(OriginalInterpreterTest, Opcode8XYN_6XNN) {
 		interpreter->doCycle();
 		EXPECT_EQ(0x00, snapshot.getRegisterValue(3));
 
-		EXPECT_EQ(260, snapshot.getCountCycles());
+		EXPECT_EQ(260, interpreter->getCyclesCount());
 	}
 	// Opcode 8XY3
 	{
@@ -424,7 +426,7 @@ TEST_F(OriginalInterpreterTest, Opcode8XYN_6XNN) {
 		interpreter->doCycle();
 		EXPECT_EQ(0x24, snapshot.getRegisterValue(3));
 
-		EXPECT_EQ(260, snapshot.getCountCycles());
+		EXPECT_EQ(260, interpreter->getCyclesCount());
 	}
 	// Opcode 8XY4 (no carry)
 	{
@@ -442,7 +444,7 @@ TEST_F(OriginalInterpreterTest, Opcode8XYN_6XNN) {
 		EXPECT_EQ(0xFF, snapshot.getRegisterValue(3));
 		EXPECT_EQ(0x00, snapshot.getCarryValue());
 
-		EXPECT_EQ(260, snapshot.getCountCycles());
+		EXPECT_EQ(260, interpreter->getCyclesCount());
 	}
 	// Opcode 8XY4 (carry)
 	{
@@ -460,7 +462,7 @@ TEST_F(OriginalInterpreterTest, Opcode8XYN_6XNN) {
 		EXPECT_EQ(0x00, snapshot.getRegisterValue(3));
 		EXPECT_EQ(0x01, snapshot.getCarryValue());
 
-		EXPECT_EQ(260, snapshot.getCountCycles());
+		EXPECT_EQ(260, interpreter->getCyclesCount());
 	}
 	// Opcode 8XY5 (no borrrow)
 	{
@@ -478,7 +480,7 @@ TEST_F(OriginalInterpreterTest, Opcode8XYN_6XNN) {
 		EXPECT_EQ(0xF0, snapshot.getRegisterValue(3));
 		EXPECT_EQ(0x01, snapshot.getCarryValue());
 
-		EXPECT_EQ(260, snapshot.getCountCycles());
+		EXPECT_EQ(260, interpreter->getCyclesCount());
 	}
 	// Opcode 8XY5 (borrrow)
 	{
@@ -496,7 +498,7 @@ TEST_F(OriginalInterpreterTest, Opcode8XYN_6XNN) {
 		EXPECT_EQ(0xF0, snapshot.getRegisterValue(3));
 		EXPECT_EQ(0x01, snapshot.getCarryValue());
 
-		EXPECT_EQ(260, snapshot.getCountCycles());
+		EXPECT_EQ(260, interpreter->getCyclesCount());
 	}
 	// Opcode 8XY6 (no carry)
 	{
@@ -512,7 +514,7 @@ TEST_F(OriginalInterpreterTest, Opcode8XYN_6XNN) {
 		EXPECT_EQ(0x01, snapshot.getRegisterValue(3));
 		EXPECT_EQ(0x00, snapshot.getCarryValue());
 
-		EXPECT_EQ(186, snapshot.getCountCycles());
+		EXPECT_EQ(186, interpreter->getCyclesCount());
 	}
 	// Opcode 8XY6 (carry)
 	{
@@ -528,7 +530,7 @@ TEST_F(OriginalInterpreterTest, Opcode8XYN_6XNN) {
 		EXPECT_EQ(0x02, snapshot.getRegisterValue(3));
 		EXPECT_EQ(0x01, snapshot.getCarryValue());
 
-		EXPECT_EQ(186, snapshot.getCountCycles());
+		EXPECT_EQ(186, interpreter->getCyclesCount());
 	}
 	// Opcode 8XY7 (no borrrow)
 	{
@@ -546,7 +548,7 @@ TEST_F(OriginalInterpreterTest, Opcode8XYN_6XNN) {
 		EXPECT_EQ(0xF0, snapshot.getRegisterValue(13));
 		EXPECT_EQ(0x01, snapshot.getCarryValue());
 
-		EXPECT_EQ(260, snapshot.getCountCycles());
+		EXPECT_EQ(260, interpreter->getCyclesCount());
 	}
 	// Opcode 8XY7 (borrrow)
 	{
@@ -564,7 +566,7 @@ TEST_F(OriginalInterpreterTest, Opcode8XYN_6XNN) {
 		EXPECT_EQ(0xF0, snapshot.getRegisterValue(13));
 		EXPECT_EQ(0x01, snapshot.getCarryValue());
 
-		EXPECT_EQ(260, snapshot.getCountCycles());
+		EXPECT_EQ(260, interpreter->getCyclesCount());
 	}
 	// Opcode 8XYE (no carry)
 	{
@@ -580,7 +582,7 @@ TEST_F(OriginalInterpreterTest, Opcode8XYN_6XNN) {
 		EXPECT_EQ(0x80, snapshot.getRegisterValue(3));
 		EXPECT_EQ(0x00, snapshot.getCarryValue());
 
-		EXPECT_EQ(186, snapshot.getCountCycles());
+		EXPECT_EQ(186, interpreter->getCyclesCount());
 	}
 	// Opcode 8XYE (carry)
 	{
@@ -596,7 +598,7 @@ TEST_F(OriginalInterpreterTest, Opcode8XYN_6XNN) {
 		EXPECT_EQ(0x40, snapshot.getRegisterValue(3));
 		EXPECT_EQ(0x01, snapshot.getCarryValue());
 
-		EXPECT_EQ(186, snapshot.getCountCycles());
+		EXPECT_EQ(186, interpreter->getCyclesCount());
 	}
 }
 
@@ -620,7 +622,7 @@ TEST_F(OriginalInterpreterTest, OpcodeBNNN_6XNN) {
 	interpreter->doCycle();
 	EXPECT_EQ(Interpreter::OFFSET_PROGRAM_START, snapshot.getProgramCounterValue());
 
-	EXPECT_EQ(418, snapshot.getCountCycles());
+	EXPECT_EQ(418, interpreter->getCyclesCount());
 }
 
 TEST_F(OriginalInterpreterTest, OpcodeDXYN_6XNN_ANNN) {
@@ -635,7 +637,7 @@ TEST_F(OriginalInterpreterTest, OpcodeDXYN_6XNN_ANNN) {
 		// Sprite data below (offset 32 bytes):
 		0x99,0x42,0x3C,0xA5,0xA5,0x3C,0x42,0x99 
 	};
-	DefaultDisplay::Frame referenceFrame = { 0x00 };
+	Frame referenceFrame = { 0x00 };
 
 	rect invalidRect;
 
@@ -660,7 +662,7 @@ TEST_F(OriginalInterpreterTest, OpcodeDXYN_6XNN_ANNN) {
 		referenceFrame[448] = 0xFF; referenceFrame[451] = 0xFF; referenceFrame[452] = 0xFF; referenceFrame[455] = 0xFF;
 	}
 	EXPECT_TRUE(*display);
-	EXPECT_EQ(0, memcmp(*display, referenceFrame, sizeof(DefaultDisplay::Frame)));
+	EXPECT_EQ(0, memcmp(*display, referenceFrame, sizeof(Frame)));
 	EXPECT_EQ(0x00, snapshot.getCarryValue());
 
 	display->getInvalidArea(invalidRect);
@@ -684,14 +686,14 @@ TEST_F(OriginalInterpreterTest, OpcodeDXYN_6XNN_ANNN) {
 		referenceFrame[507] = 0xFF; referenceFrame[510] = 0xFF; referenceFrame[511] = 0xFF;
 	}
 	EXPECT_TRUE(*display);
-	EXPECT_EQ(0, memcmp(*display, referenceFrame, sizeof(DefaultDisplay::Frame)));
+	EXPECT_EQ(0, memcmp(*display, referenceFrame, sizeof(Frame)));
 	EXPECT_EQ(0x00, snapshot.getCarryValue());
 
 	display->getInvalidArea(invalidRect);
-	EXPECT_EQ(0, invalidRect.x);
-	EXPECT_EQ(0, invalidRect.y);
-	EXPECT_EQ(5, invalidRect.w);
-	EXPECT_EQ(8, invalidRect.h);
+	EXPECT_EQ(59, invalidRect.x);
+	EXPECT_EQ( 0, invalidRect.y);
+	EXPECT_EQ( 5, invalidRect.w);
+	EXPECT_EQ( 8, invalidRect.h);
 
 	display->validate();
 	interpreter->doCycle();
@@ -705,14 +707,14 @@ TEST_F(OriginalInterpreterTest, OpcodeDXYN_6XNN_ANNN) {
 		referenceFrame[1984] = 0xFF; referenceFrame[1986] = 0xFF; referenceFrame[1989] = 0xFF; referenceFrame[1991] = 0xFF;
 	}
 	EXPECT_TRUE(*display);
-	EXPECT_EQ(0, memcmp(*display, referenceFrame, sizeof(DefaultDisplay::Frame)));
+	EXPECT_EQ(0, memcmp(*display, referenceFrame, sizeof(Frame)));
 	EXPECT_EQ(0x00, snapshot.getCarryValue());
 
 	display->getInvalidArea(invalidRect);
-	EXPECT_EQ(0, invalidRect.x);
-	EXPECT_EQ(0, invalidRect.y);
-	EXPECT_EQ(8, invalidRect.w);
-	EXPECT_EQ(5, invalidRect.h);
+	EXPECT_EQ( 0, invalidRect.x);
+	EXPECT_EQ(27, invalidRect.y);
+	EXPECT_EQ( 8, invalidRect.w);
+	EXPECT_EQ( 5, invalidRect.h);
 
 	display->validate();
 	interpreter->doCycle();
@@ -726,14 +728,14 @@ TEST_F(OriginalInterpreterTest, OpcodeDXYN_6XNN_ANNN) {
 		referenceFrame[2043] = 0xFF; referenceFrame[2045] = 0xFF;
 	}
 	EXPECT_TRUE(*display);
-	EXPECT_EQ(0, memcmp(*display, referenceFrame, sizeof(DefaultDisplay::Frame)));
+	EXPECT_EQ(0, memcmp(*display, referenceFrame, sizeof(Frame)));
 	EXPECT_EQ(0x00, snapshot.getCarryValue());
 
 	display->getInvalidArea(invalidRect);
-	EXPECT_EQ(0, invalidRect.x);
-	EXPECT_EQ(0, invalidRect.y);
-	EXPECT_EQ(5, invalidRect.w);
-	EXPECT_EQ(5, invalidRect.h);
+	EXPECT_EQ(59, invalidRect.x);
+	EXPECT_EQ(27, invalidRect.y);
+	EXPECT_EQ( 5, invalidRect.w);
+	EXPECT_EQ( 5, invalidRect.h);
 
 	display->validate();
 	interpreter->doCycle();
@@ -750,7 +752,7 @@ TEST_F(OriginalInterpreterTest, OpcodeDXYN_6XNN_ANNN) {
 		referenceFrame[448] = 0x00; referenceFrame[451] = 0x00; referenceFrame[452] = 0x00; referenceFrame[455] = 0x00;
 	}
 	EXPECT_TRUE(*display);
-	EXPECT_EQ(0, memcmp(*display, referenceFrame, sizeof(DefaultDisplay::Frame)));
+	EXPECT_EQ(0, memcmp(*display, referenceFrame, sizeof(Frame)));
 	EXPECT_EQ(0x01, snapshot.getCarryValue());
 
 	display->getInvalidArea(invalidRect);
@@ -759,7 +761,7 @@ TEST_F(OriginalInterpreterTest, OpcodeDXYN_6XNN_ANNN) {
 	EXPECT_EQ(8, invalidRect.w);
 	EXPECT_EQ(8, invalidRect.h);
 
-	EXPECT_EQ(11320, snapshot.getCountCycles());
+	EXPECT_EQ(11320, interpreter->getCyclesCount());
 }
 
 TEST_F(OriginalInterpreterTest, OpcodeEX9E_EXA1_6XNN) {
@@ -779,7 +781,7 @@ TEST_F(OriginalInterpreterTest, OpcodeEX9E_EXA1_6XNN) {
 
 		interpreter->doCycle();
 	}
-	EXPECT_EQ(240, snapshot.getCountCycles());
+	EXPECT_EQ(240, interpreter->getCyclesCount());
 	EXPECT_EQ(Interpreter::OFFSET_PROGRAM_START, snapshot.getProgramCounterValue());
 
 	// Opcode EX9E \w 6XNN (True)
@@ -796,7 +798,7 @@ TEST_F(OriginalInterpreterTest, OpcodeEX9E_EXA1_6XNN) {
 
 		interpreter->doCycle();
 	}
-	EXPECT_EQ(550, snapshot.getCountCycles());
+	EXPECT_EQ(550, interpreter->getCyclesCount());
 	EXPECT_EQ(Interpreter::OFFSET_PROGRAM_START, snapshot.getProgramCounterValue());
 }
 
@@ -819,7 +821,7 @@ TEST_F(OriginalInterpreterTest, OpcodeFXNN_6XNN_ANNN) {
 		interpreter->doCycle();
 		EXPECT_EQ(0xFF, snapshot.getRegisterValue(10));
 
-		EXPECT_EQ(308, snapshot.getCountCycles());
+		EXPECT_EQ(308, interpreter->getCyclesCount());
 	}
 	// Opcode FX0A \w 6XNN
 	{
@@ -845,7 +847,7 @@ TEST_F(OriginalInterpreterTest, OpcodeFXNN_6XNN_ANNN) {
 		ASSERT_FALSE(interpreter->isKeyAwaited());
 		EXPECT_EQ(Interpreter::OFFSET_PROGRAM_START, snapshot.getProgramCounterValue());
 
-		EXPECT_EQ(18023, snapshot.getCountCycles());
+		EXPECT_EQ(18023, interpreter->getCyclesCount());
 	}
 	// Opcode FX1E \w 6XNN, ANNN
 	{
@@ -862,7 +864,7 @@ TEST_F(OriginalInterpreterTest, OpcodeFXNN_6XNN_ANNN) {
 		interpreter->doCycle();
 		EXPECT_EQ(0x2FF, snapshot.getIndexValue());
 
-		EXPECT_EQ(238, snapshot.getCountCycles());
+		EXPECT_EQ(238, interpreter->getCyclesCount());
 	}
 	// Opcode FX33 \w 6XNN, 
 	{
@@ -895,7 +897,7 @@ TEST_F(OriginalInterpreterTest, OpcodeFXNN_6XNN_ANNN) {
 		EXPECT_EQ(0x00, snapshot.getMemoryValue(snapshot.getIndexValue() + 1));
 		EXPECT_EQ(0x00, snapshot.getMemoryValue(snapshot.getIndexValue() + 2));
 
-		EXPECT_EQ(1110, snapshot.getCountCycles());
+		EXPECT_EQ(1110, interpreter->getCyclesCount());
 
 	}
 	// Opcode FX65 & FX55 \w 6XNN, ANNN
@@ -984,7 +986,7 @@ TEST_F(OriginalInterpreterTest, OpcodeFXNN_6XNN_ANNN) {
 		EXPECT_EQ(snapshot.getMemoryValue(Interpreter::OFFSET_PROGRAM_START + 17), snapshot.getRegisterValue(15));
 		EXPECT_EQ(0x212, snapshot.getIndexValue());
 
-		EXPECT_EQ(2044, snapshot.getCountCycles());
+		EXPECT_EQ(2044, interpreter->getCyclesCount());
 	}
 }
 
@@ -1020,7 +1022,7 @@ TEST_F(ModernInterpreterTest, Opcode8XYN_6XNN) {
 		EXPECT_EQ(0x00, snapshot.getRegisterValue(3));
 		EXPECT_EQ(0x00, snapshot.getCarryValue());
 
-		EXPECT_EQ(260, snapshot.getCountCycles());
+		EXPECT_EQ(260, interpreter->getCyclesCount());
 	}
 	// Opcode 8XY6 (carry)
 	{
@@ -1037,7 +1039,7 @@ TEST_F(ModernInterpreterTest, Opcode8XYN_6XNN) {
 		EXPECT_EQ(0x00, snapshot.getRegisterValue(3));
 		EXPECT_EQ(0x01, snapshot.getCarryValue());
 
-		EXPECT_EQ(260, snapshot.getCountCycles());
+		EXPECT_EQ(260, interpreter->getCyclesCount());
 	}
 	// Opcode 8XYE (no carry)
 	{
@@ -1054,7 +1056,7 @@ TEST_F(ModernInterpreterTest, Opcode8XYN_6XNN) {
 		EXPECT_EQ(0x00, snapshot.getRegisterValue(3));
 		EXPECT_EQ(0x00, snapshot.getCarryValue());
 
-		EXPECT_EQ(260, snapshot.getCountCycles());
+		EXPECT_EQ(260, interpreter->getCyclesCount());
 	}
 	// Opcode 8XYE (carry)
 	{
@@ -1071,6 +1073,6 @@ TEST_F(ModernInterpreterTest, Opcode8XYN_6XNN) {
 		EXPECT_EQ(0x00, snapshot.getRegisterValue(3));
 		EXPECT_EQ(0x01, snapshot.getCarryValue());
 
-		EXPECT_EQ(260, snapshot.getCountCycles());
+		EXPECT_EQ(260, interpreter->getCyclesCount());
 	}
 }

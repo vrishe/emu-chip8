@@ -56,6 +56,8 @@ namespace platform {
 	};
 
 	VKMappedKeypad::DefaultMapping::DefaultMapping() {
+		std::uninitialized_fill(map, map + _countof(map), PadKeys::KEY_NONE);
+
 		map['X'] = PadKeys::KEY_0;
 		map['1'] = PadKeys::KEY_1;
 		map['2'] = PadKeys::KEY_2;

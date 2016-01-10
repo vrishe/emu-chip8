@@ -46,113 +46,6 @@ namespace chip8 {
 	}
 
 
-	void Interpreter::applyALUProfile(word aluProfile) {
-		switch (aluProfile) {
-		case ALU_PROFILE_MODERN:
-			shl = &Interpreter::shl_modern;
-			shr = &Interpreter::shr_modern;
-			break;
-
-		case ALU_PROFILE_ORIGINAL:
-			shl = &Interpreter::shl_original;
-			shr = &Interpreter::shr_original;
-			break;
-		}
-	}
-
-
-#define FETCH_OPCODE(offset, lower, higher)								\
-	(																	\
-		assert(lower <= (offset) && (offset) < higher),					\
-		(memory + (offset))												\
-	)
-#define MODIFY_REGISTER_OP(idx, op, value)								\
-	{																	\
-		assert(0U <= (idx) && (idx) < Interpreter::REGISTERS_COUNT);	\
-		registers[idx] op (value);										\
-	}
-#define READ_REGISTER(idx)												\
-	(																	\
-		assert(0U <= (idx) && (idx) < Interpreter::REGISTERS_COUNT),	\
-		registers[idx]													\
-	)
-
-
-#define MODIFY_ARRAY_OP_(arr, idx, op, value, lower, higher, errc)	\
-	(lastError = (!(lower <= (idx) && (idx) < higher) ? (errc) : INTERPRETER_ERROR_OK), arr[idx] op (value))
-#define READ_ARRAY_(arr, idx, lower, higher, errc)					\
-	(lastError = (!(lower <= (idx) && (idx) < higher) ? (errc) : INTERPRETER_ERROR_OK), arr[idx])
-
-#define MODIFY_STACK(idx, value) \
-	MODIFY_ARRAY_OP_(stack, idx, =, value, 0U, STACK_DEPTH, INTERPRETER_ERROR_STACK_OVERFLOW)
-#define READ_STACK(idx) \
-	READ_ARRAY_(stack, idx, 0U, STACK_DEPTH, INTERPRETER_ERROR_STACK_OVERFLOW)
-
-#define MODIFY_MEMORY(idx, value) \
-	MODIFY_ARRAY_OP_(memory, idx, =, value, OFFSET_PROGRAM_START, memorySize, INTERPRETER_ERROR_INDEX_OUT_OF_BOUNDS)
-#define READ_MEMORY(idx) \
-	READ_ARRAY_(memory, idx, 0U, memorySize, INTERPRETER_ERROR_INDEX_OUT_OF_BOUNDS)
-
-
-#define PROGRAM_COUNTER_STEP sizeof(Opcode)
-#define EXTRACT_OP(opcode) (opcode.hi >> 4)
-
-	void Interpreter::doCycle() {
-		assert(isOk());
-
-		if (throttleCycles == 0) {
-			// TODO: it may be allowed to have no keypad in future.
-			PadKeys kbState = deviceKeyPad->getState();
-
-			if (isKeyAwaited()) {
-				auto &timer = timers[TIMER_SOUND];
-
-				// This check allows to trigger this method on each loop pass.
-				// So, simply there's no need to track keyboard hit externally.
-				if (kbState == KEY_NONE && kb != KEY_NONE) {
-
-					byte keyIdx = 0;
-					while (((kb >> keyIdx) & 0x01) == 0) {
-						++keyIdx;
-					}
-					registers[keyHaltRegister] = keyIdx;
-					keyHaltRegister = KEY_HALT_UNSET;
-
-					// Reset timer sound as it will be overridden by kbState hit await routine.
-					timer.value = 0;
-				}
-				else {
-					// Continue beep'ing until kbState is not released.
-					if (timer.value == 0) {
-						timer.value = 4;
-					}
-				}
-				// This branch is responsile for kbState debounce emulation.
-				// Not sure, it'll take just 9 cycles.
-				//
-				// See: http://laurencescotford.co.uk/?p=347 for details.
-				throttleCycles = 9;
-			}
-			kb = kbState;
-
-			if (!isKeyAwaited()) {
-				Opcode opcode = *reinterpret_cast<Opcode *>(const_cast<byte*>(
-					FETCH_OPCODE(pc, OFFSET_PROGRAM_START, memorySize)));
-
-				pc += PROGRAM_COUNTER_STEP;
-				throttleCycles = (this->*Interpreter::macroCodesLUT[EXTRACT_OP(opcode)]) (opcode);
-
-				++rndSeed;
-			}
-			refreshTimers();
-		}
-		else {
-			--throttleCycles;
-		}
-		++countCycles;
-	}
-
-
 	void Interpreter::reset(const byte *prg, size_t prgLen)
 	{
 		assert(prg);
@@ -227,13 +120,12 @@ namespace chip8 {
 		memset(registers, 0x00, sizeof(registers));
 
 		timers[TIMER_DELAY].value = 0;
-		timers[TIMER_DELAY].timestamp = TIMESTAMP_UNDEFINED;
+		timers[TIMER_DELAY].timestamp = 0ULL;
 
 		timers[TIMER_SOUND].value = 0;
-		timers[TIMER_SOUND].timestamp = TIMESTAMP_UNDEFINED;
+		timers[TIMER_SOUND].timestamp = 0ULL;
 
 		countCycles = 0;
-		throttleCycles = 0;
 
 		sp = STACK_DEPTH;
 		keyHaltRegister = KEY_HALT_UNSET;
@@ -244,6 +136,21 @@ namespace chip8 {
 		kb = KEY_NONE;
 
 		lastError = INTERPRETER_ERROR_NO_PROGRAM;
+	}
+
+
+	void Interpreter::applyALUProfile(word aluProfile) {
+		switch (aluProfile) {
+		case ALU_PROFILE_MODERN:
+			shl = &Interpreter::shl_modern;
+			shr = &Interpreter::shr_modern;
+			break;
+
+		case ALU_PROFILE_ORIGINAL:
+			shl = &Interpreter::shl_original;
+			shr = &Interpreter::shr_original;
+			break;
+		}
 	}
 
 
@@ -258,17 +165,115 @@ namespace chip8 {
 	(((cycles) / TIMER_TICK_CYCLES) * TIMER_TICK_CYCLES)
 
 	void Interpreter::refreshTimers() {
-		onTick(TIMER_DELAY);
-		onTick(TIMER_SOUND);
+		onTimerTick(TIMER_DELAY);
+		onTimerTick(TIMER_SOUND);
 	}
 
-	void Interpreter::onTick(word timerId) {
+	void Interpreter::onTimerTick(word timerId) {
 		countdown_timer &timer = timers[timerId];
 
-		if (timer.value > 0 && countCycles >= timer.timestamp) {
-			timer.timestamp += TIMER_TICK_CYCLES;
-			timer.value--;				
+		if (timer.value > 0) {
+			clock difference = countCycles - timer.timestamp;
+
+			if (difference >= TIMER_TICK_CYCLES) {
+				clock period = difference / TIMER_TICK_CYCLES;
+				clock remainder = difference % TIMER_TICK_CYCLES;
+
+				timer.value -= byte(period);
+				timer.timestamp = countCycles - remainder;
+			}						
 		}
+	}
+
+
+#define FETCH_OPCODE(offset, lower, higher)								\
+	(																	\
+		assert(lower <= (offset) && (offset) < higher),					\
+		(memory + (offset))												\
+	)
+#define MODIFY_REGISTER_OP(idx, op, value)								\
+		{																	\
+		assert(0U <= (idx) && (idx) < Interpreter::REGISTERS_COUNT);	\
+		registers[idx] op (value);										\
+		}
+#define READ_REGISTER(idx)												\
+	(																	\
+		assert(0U <= (idx) && (idx) < Interpreter::REGISTERS_COUNT),	\
+		registers[idx]													\
+	)
+
+
+#define MODIFY_ARRAY_OP_(arr, idx, op, value, lower, higher, errc)	\
+	(lastError = (!(lower <= (idx) && (idx) < higher) ? (errc) : INTERPRETER_ERROR_OK), arr[idx] op (value))
+#define READ_ARRAY_(arr, idx, lower, higher, errc)					\
+	(lastError = (!(lower <= (idx) && (idx) < higher) ? (errc) : INTERPRETER_ERROR_OK), arr[idx])
+
+#define MODIFY_STACK(idx, value) \
+	MODIFY_ARRAY_OP_(stack, idx, =, value, 0U, STACK_DEPTH, INTERPRETER_ERROR_STACK_OVERFLOW)
+#define READ_STACK(idx) \
+	READ_ARRAY_(stack, idx, 0U, STACK_DEPTH, INTERPRETER_ERROR_STACK_OVERFLOW)
+
+#define MODIFY_MEMORY(idx, value) \
+	MODIFY_ARRAY_OP_(memory, idx, =, value, OFFSET_PROGRAM_START, memorySize, INTERPRETER_ERROR_INDEX_OUT_OF_BOUNDS)
+#define READ_MEMORY(idx) \
+	READ_ARRAY_(memory, idx, 0U, memorySize, INTERPRETER_ERROR_INDEX_OUT_OF_BOUNDS)
+
+
+#define PROGRAM_COUNTER_STEP sizeof(Opcode)
+#define EXTRACT_OP(opcode) (opcode.hi >> 4)
+
+	clock Interpreter::doCycle() {
+		assert(isOk());
+
+		clock result = 0;
+
+		// TODO: it may be allowed to have no keypad in future.
+		PadKeys kbState = deviceKeyPad->getState();
+
+		if (isKeyAwaited()) {
+			auto &timer = timers[TIMER_SOUND];
+
+			// This check allows to trigger this method on each loop pass.
+			// So, simply there's no need to track keyboard hit externally.
+			if (kbState == KEY_NONE && kb != KEY_NONE) {
+
+				byte keyIdx = 0;
+				while (((kb >> keyIdx) & 0x01) == 0) {
+					++keyIdx;
+				}
+				registers[keyHaltRegister] = keyIdx;
+				keyHaltRegister = KEY_HALT_UNSET;
+
+				// Reset timer sound as it will be overridden by kbState hit await routine.
+				timer.value = 0;
+			}
+			else {
+				// Continue beep'ing until kbState is not released.
+				if (timer.value == 0) {
+					timer.value = 4;
+				}
+			}
+			// This branch is responsile for kbState debounce emulation.
+			// Not sure, it'll take just 9 cycles.
+			//
+			// See: http://laurencescotford.co.uk/?p=347 for details.
+			result += 9;
+		}
+		kb = kbState;
+
+		if (!isKeyAwaited()) {
+			Opcode opcode = *reinterpret_cast<Opcode *>(const_cast<byte*>(
+				FETCH_OPCODE(pc, OFFSET_PROGRAM_START, memorySize)));
+
+			pc += PROGRAM_COUNTER_STEP;
+			result += (this->*Interpreter::macroCodesLUT[EXTRACT_OP(opcode)]) (opcode);
+
+			++rndSeed;
+		}
+		countCycles += result;
+		refreshTimers();	
+
+		return result;
 	}
 
 
@@ -404,14 +409,14 @@ namespace chip8 {
 		byte flag = dst & 0x01;
 
 		dst >>= 1;
-		carry = flag;
+		carry = flag;		
 	}
 	void Interpreter::shl_modern(size_t idx, size_t idy) {
 		byte &dst = READ_REGISTER(idx);
 		byte flag = dst >> 7;
 
 		dst <<= 1;
-		carry = flag;
+		carry = flag;	
 	}
 	void Interpreter::shr_original(size_t idx, size_t idy) {
 		byte value = READ_REGISTER(idy);
@@ -498,7 +503,7 @@ namespace chip8 {
 						byte &pixel = *column;
 
 						pixel ^= 0xFF;
-						collision = pixel == 0x00;
+						collision |= !pixel;
 					}
 				}
 			}
@@ -511,11 +516,13 @@ namespace chip8 {
 		word reg = READ_REGISTER(idx);
 
 		timers[TIMER_SOUND].value = reg > 1 ? reg : 0;
-		timers[TIMER_SOUND].timestamp = TIMER_TICKS(countCycles) + TIMER_TICK_CYCLES;
+		// 72 is an approx. number of machine cycles
+		// that will pass before timer register is set.
+		timers[TIMER_SOUND].timestamp = countCycles + 72; 
 	}
 	inline void Interpreter::delay(size_t idx) {
 		timers[TIMER_DELAY].value = READ_REGISTER(idx);
-		timers[TIMER_DELAY].timestamp = countCycles + TIMER_TICK_CYCLES + 72;
+		timers[TIMER_DELAY].timestamp = countCycles + 72;
 	}
 	inline void Interpreter::key(size_t idx) {
 		keyHaltRegister = idx;
@@ -686,9 +693,13 @@ namespace chip8 {
 		// Because it is really hard to estimate an exact number of cycles, 
 		// we provide a linear approximation here.
 		//
-		// 3812 / 15 ~ 254
+		// (((2533 + 3666) / 3) + 3812) / 15 ~ 412,
+		// where first part is for avg. IDL await time,
+		// the second is a worst case of time consumtion by drawing routine 
+		// (15 rows, collision on each row, 14*14 pixels offscreen).
+		//
 		// See: http://laurencescotford.co.uk/?p=304 for details.
-		return COUNT_CYCLES_TAKEN_BY_GROUPN(rowsCount * 254);
+		return COUNT_CYCLES_TAKEN_BY_GROUPN(rowsCount * 412);
 	}
 	size_t Interpreter::opE(const Opcode &opcode) {
 		switch (EXTRACT_VAL2(opcode)) {

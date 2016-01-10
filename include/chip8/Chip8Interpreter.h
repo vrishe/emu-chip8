@@ -43,8 +43,6 @@ namespace chip8 {
 		};
 
 		
-	
-
 		Interpreter(
 			IDisplay *display,
 			IKeyPad *keyPad,
@@ -60,12 +58,11 @@ namespace chip8 {
 			return lastError;
 		}
 
-		size_t getCyclesCount() const {
+		clock getCyclesCount() const {
 			return countCycles;
 		}
 
-		void doCycle();
-
+		clock doCycle();
 
 		template <size_t prgLen>
 		void reset(const byte(&prg)[prgLen]) {
@@ -118,19 +115,17 @@ namespace chip8 {
 			TIMER_SOUND = 1,
 
 			KEY_HALT_UNSET = size_t(-1),
-
-			TIMESTAMP_UNDEFINED = size_t(-1)
 		};
 
 		struct countdown_timer {
-			size_t timestamp;
+			clock timestamp;
 
 			byte value;
 		};
 
 		countdown_timer timers[2];
-		size_t countCycles;
-		size_t throttleCycles;
+
+		clock countCycles;
 
 		size_t sp;
 		size_t keyHaltRegister;
@@ -148,11 +143,11 @@ namespace chip8 {
 		const size_t memorySize;
 		byte *memory;
 
-
 		void reset_impl();
 
 		void refreshTimers();
-		void onTick(word timerId);
+		void onTimerTick(word timerId);
+		
 
 
 		// ========================================================
@@ -248,25 +243,20 @@ namespace chip8 {
 
 		class Snapshot {
 
-			const Interpreter *soc;
+			Interpreter *soc;
 
 		public:
-			static Snapshot &obtain(Snapshot &snapshot, const Interpreter &soc) {
+			static Snapshot &obtain(Snapshot &snapshot, Interpreter &soc) {
 				snapshot.soc = &soc;
 
 				return snapshot;
 			}
-
 
 			word getTimerDelay() const {
 				return soc->timers[TIMER_DELAY].value;
 			}
 			word getTimerSound() const {
 				return soc->timers[TIMER_SOUND].value;
-			}
-
-			unsigned long long getCountCycles() const {
-				return soc->countCycles;
 			}
 
 			size_t getStackPointer() const {

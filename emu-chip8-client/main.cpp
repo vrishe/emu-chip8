@@ -10,6 +10,7 @@
 #include "VKMappedKeyPad.h"
 
 
+#define THROTTLE_MULT	1
 #define SCREEN_ASPECT_X 10
 #define SCREEN_ASPECT_Y 10
 
@@ -39,20 +40,25 @@ static void EnterInterpretationLoop(HWND hWnd) {
 
 	chip8::rect invalidRect;
 
-	while (running) {
+	LARGE_INTEGER start, end;
+	for (size_t throttleCycles = 0; running; --throttleCycles) {
 		if (PeekMessage(lpMsg, hWnd, 0, 0, PM_REMOVE)) {
 			TranslateMessage(lpMsg);
 			DispatchMessage(lpMsg);
 		}
 		if (machine.isOk()) {
-			machine.doCycle();
+			throttleCycles = machine.doCycle() * THROTTLE_MULT;
+
+			QueryPerformanceCounter(&start);
+
+			start.QuadPart += (throttleCycles * 20000000ULL) / 1760000;
 
 			if ((bool)defaultDisplay) {
 				defaultDisplay.getInvalidArea(invalidRect);
 
 				glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 				glPixelStorei(GL_UNPACK_ROW_LENGTH, defaultDisplay.width());
-				glTexSubImage2D(GL_TEXTURE_2D, 0, invalidRect.x, invalidRect.y, 
+				glTexSubImage2D(GL_TEXTURE_2D, 0, invalidRect.x, invalidRect.y,
 					invalidRect.w, invalidRect.h, GL_RED, GL_UNSIGNED_BYTE, defaultDisplay.getLine(invalidRect.y, invalidRect.x));
 
 				RECT dirtyRect = {
@@ -65,6 +71,9 @@ static void EnterInterpretationLoop(HWND hWnd) {
 
 				defaultDisplay.validate();
 			}
+			do {
+				QueryPerformanceCounter(&end);
+			} while (start.QuadPart > end.QuadPart);
 		}
 	}
 }
@@ -397,6 +406,9 @@ static VOID Chip8DisplayCommand(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify
 		}
 		case ID_FILE_RESET:
 			machine.reset();
+
+			SendMessage(hWnd, WM_INTERPRETER, MACHINE_STATE_IDLE, 0);
+			PostMessage(hWnd, WM_INTERPRETER, MACHINE_STATE_RUNNING, 0);
 
 			CheckMenuItem(GetMenu(hWnd), ID_FILE_PAUSE, MF_UNCHECKED);
 			break;
