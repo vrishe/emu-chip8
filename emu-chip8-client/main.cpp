@@ -6,84 +6,213 @@
 #include "chip8\Chip8Interpreter.h"
 #include "chip8\Chip8Display.h"
 
-#include "main.h"
+#include "NBufferedDisplay.h"
 #include "VKMappedKeyPad.h"
+#include "QueueThread.h"
+
+#include "main.h"
+#include "configuration.h"
 
 
-#define THROTTLE_MULT	1
-#define SCREEN_ASPECT_X 10
-#define SCREEN_ASPECT_Y 10
-
-#define DISPLAY_WINDOW_WIDTH  (chip8::DefaultDisplay::FRAME_WIDTH  * SCREEN_ASPECT_X)
-#define DISPLAY_WINDOW_HEIGHT (chip8::DefaultDisplay::FRAME_HEIGHT * SCREEN_ASPECT_Y)
-
-static chip8::DefaultDisplay	defaultDisplay;
-static platform::VKMappedKeypad	defaultKeypad;
-
-static chip8::Interpreter machine(&defaultDisplay, &defaultKeypad);
-
-#define WM_INTERPRETER (WM_USER + 1024)
-#define HANDLE_WM_INTERPRETER(hwnd, wParam, lParam, fn) \
-    ((fn)((hwnd), (UINT)LOWORD(wParam)), 0L)
-
-#define MACHINE_STATE_IDLE		0
-#define MACHINE_STATE_RUNNING	1
+///////////////////////////////////////////////////////////////////////////////////////
+// Interpretation
+///////////////////////////////////////////////////////////////////////////////////////
 
 
-static bool running;
+#define WM_INTERPRETATION (WM_USER + 1024)
+// void InterpretationHandler(HWND hwnd, UINT what)
+#define HANDLE_WM_INTERPRETATION(hwnd, wParam, lParam, fn) \
+    ((fn)((hwnd), (UINT)(wParam)), 0L)
 
-static void EnterInterpretationLoop(HWND hWnd) {
-	running = true;
+#define INTERPRETATION_EVENT_FRAME_UPDATE 1
 
-	MSG msg;
-	const LPMSG lpMsg = &msg;
 
-	chip8::rect invalidRect;
+#define INTERPRETATION_FRAME_RATE 166667
 
-	LARGE_INTEGER start, end;
-	for (size_t throttleCycles = 0; running; --throttleCycles) {
-		if (PeekMessage(lpMsg, hWnd, 0, 0, PM_REMOVE)) {
-			TranslateMessage(lpMsg);
-			DispatchMessage(lpMsg);
-		}
-		if (machine.isOk()) {
-			throttleCycles = machine.doCycle() * THROTTLE_MULT;
+class Interpretation {
 
-			QueryPerformanceCounter(&start);
+	platform::NBufferedDisplay<4>	*display;
+	platform::VKMappedKeypad		*keypad;
+	chip8::Interpreter				*interpreter;
 
-			start.QuadPart += (throttleCycles * 20000000ULL) / 1760000;
+	HANDLE pauseEvent;
+	HWND hWndOwner;
 
-			if ((bool)defaultDisplay) {
-				defaultDisplay.getInvalidArea(invalidRect);
+	platform::QueueThread *executionThread;
 
-				glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-				glPixelStorei(GL_UNPACK_ROW_LENGTH, defaultDisplay.width());
-				glTexSubImage2D(GL_TEXTURE_2D, 0, invalidRect.x, invalidRect.y,
-					invalidRect.w, invalidRect.h, GL_RED, GL_UNSIGNED_BYTE, defaultDisplay.getLine(invalidRect.y, invalidRect.x));
 
-				RECT dirtyRect = {
-					dirtyRect.left = invalidRect.x * SCREEN_ASPECT_X,
-					dirtyRect.top = invalidRect.y * SCREEN_ASPECT_Y,
-					dirtyRect.right = (invalidRect.x + invalidRect.w) * SCREEN_ASPECT_X,
-					dirtyRect.bottom = (invalidRect.y + invalidRect.h) * SCREEN_ASPECT_Y
-				};
-				InvalidateRect(hWnd, &dirtyRect, FALSE);
+	chip8::clock cyclesPerFrame;
+	chip8::clock cycles;
 
-				defaultDisplay.validate();
+	LARGE_INTEGER ticksPerFrame;
+	LARGE_INTEGER ticks, ticksCurrent;
+
+	void threadFunc() {
+		DWORD waitResult = WaitForSingleObject(pauseEvent, INFINITE);
+
+		if (waitResult == WAIT_OBJECT_0) {
+			cycles = 0;
+			while (cycles < cyclesPerFrame) {
+				if (interpreter->isOk()) {
+					cycles += interpreter->doCycle();
+				}
+				else {
+					if (interpreter->getLastError() != chip8::Interpreter::INTERPRETER_ERROR_NO_PROGRAM) {
+						LOGGER_PRINT_FORMATTED_TEXTLN("Interpreter failure: %d. Pausing...", interpreter->getLastError());
+
+						pause();
+					}
+					return;
+				}
 			}
-			do {
-				QueryPerformanceCounter(&end);
-			} while (start.QuadPart > end.QuadPart);
+			if (display->isInvalid()) {
+				if (IsWindow(hWndOwner)) {
+					PostMessage(hWndOwner, WM_INTERPRETATION, INTERPRETATION_EVENT_FRAME_UPDATE, 0);
+				}
+				(++*display).validate();
+			}
+			interpreter->refreshTimers();
 		}
+		do {
+			QueryPerformanceCounter(&ticks);
+		} while (ticks.QuadPart - ticksCurrent.QuadPart < ticksPerFrame.QuadPart);
+
+		QueryPerformanceCounter(&ticksCurrent);
 	}
+
+	Interpretation(const Interpretation &);
+	Interpretation(const Interpretation &&);
+
+public:
+
+	Interpretation(const config::Configuration &settings)
+		: cyclesPerFrame(settings.machineCyclesPerStep) {
+
+		UNREFERENCED_PARAMETER(settings);
+
+		display = new platform::NBufferedDisplay<4>();
+		keypad = new platform::VKMappedKeypad();
+		interpreter = new chip8::Interpreter(display, keypad);
+
+		pauseEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+		executionThread = new platform::QueueThread(&Interpretation::threadFunc, this);
+
+		QueryPerformanceFrequency(&ticksPerFrame);
+		ticksPerFrame.QuadPart = (ticksPerFrame.QuadPart + 30) / 60;
+		ticksCurrent.QuadPart = 0;
+	}
+
+	~Interpretation() {
+		unpause();
+
+		delete executionThread;
+		// Call order is important here as we rely 
+		// on this when deleting stuff below.
+		CloseHandle(pauseEvent);
+
+		delete interpreter;
+		delete keypad;
+		delete display;
+	}
+
+
+	void assignOwnerWindow(HWND hWndOwner) {
+		this->hWndOwner = hWndOwner;
+	}
+
+
+	const chip8::IDisplay *getDisplay() {
+		return display;
+	}
+
+	const byte *consumeDisplayData() {
+		return display->consume();
+	}
+
+
+	const chip8::IKeyPad *getKeypad() {
+		return keypad;
+	}
+
+	void updateKeypadKey(UINT vk, BOOL fDown) {
+		keypad->updateKey(vk, fDown);
+	}
+
+
+	void load(LPCTSTR programFile) {
+		class LoadTask : public platform::ITask {
+
+			chip8::Interpreter *interpreter;
+
+			std::_tstring programFile;
+
+
+		public:
+			
+			LoadTask(chip8::Interpreter *interpreter, LPCTSTR programFile)
+				: interpreter(interpreter), programFile(programFile) {
+
+				/* Nothing to do */
+			}
+
+
+			void perform() {
+				interpreter->reset(std::ifstream(programFile, std::ios_base::binary));
+			}
+		};
+		executionThread->post(std::shared_ptr<platform::ITask>(new LoadTask(interpreter, programFile)));
+		unpause();
+	}
+
+	void reset() {
+		class ResetTask : public platform::ITask {
+
+			chip8::Interpreter *interpreter;
+
+
+		public:
+
+			ResetTask(chip8::Interpreter *interpreter)
+				: interpreter(interpreter) {
+
+				/* Nothing to do */
+			}
+
+
+			void perform() {
+				interpreter->reset();
+			}
+		};
+		executionThread->post(std::shared_ptr<platform::ITask>(new ResetTask(interpreter)));
+		unpause();
+	}
+
+
+
+	void pause() {
+		ResetEvent(pauseEvent);
+	}
+
+	void unpause() {
+		SetEvent(pauseEvent);
+	}
+
+};
+
+static std::auto_ptr<Interpretation> interpretation;
+
+static void InitializeInterpretation(const config::Configuration &settings) {
+	interpretation.reset(new Interpretation(settings));
 }
 
-static void ExitInterpretetionLoop() {
-	running = false;
+static void UninitializeInterpretation() {
+	interpretation.release();
 }
 
 
-#define DISPLAY_PIXEL_COLOR { 0.0f, 0.6549f, 0.0f, 1.0f }
+///////////////////////////////////////////////////////////////////////////////////////
+// OpenGL Display
+///////////////////////////////////////////////////////////////////////////////////////
 
 typedef struct tagChip8DisplayExtra {
 	HDC		hDC;
@@ -116,12 +245,16 @@ static const GLchar* vertexSource =
 	"}";
 static const GLchar* fragmentSource =
 	"#version 150 compatibility\n"
+	"uniform vec4 backgroundColor;"
 	"uniform vec4 foregroundColor;"
 	"uniform sampler2D frame;"
 	"in vec2 frameCoord;"
 	"\n"
 	"void main() {"
-	"	gl_FragColor = foregroundColor * texture2D(frame, frameCoord).rrra;"
+	"	vec4 intensityDirect = texture2D(frame, frameCoord).rrra;"
+	"	vec4 intensityInverse = vec4(1, 1, 1, 1) - intensityDirect;"
+	"\n"
+	"	gl_FragColor = foregroundColor * intensityDirect + backgroundColor * intensityInverse;"
 	"}";
 
 void PrintOpenGLVersion();
@@ -168,6 +301,10 @@ static void CreateGLContext(Chip8DisplayExtra *extra) {
 	glewInit();
 
 	glDisable(GL_DEPTH_TEST);
+	glDisable(GL_CULL_FACE);
+	glDisable(GL_DITHER);
+	glDisable(GL_BLEND);
+
 	glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 
 	extra->hGLRC = hGLRC;
@@ -176,6 +313,20 @@ static void CreateGLContext(Chip8DisplayExtra *extra) {
 static void DestroyGLContext(Chip8DisplayExtra *extra) {
 	wglMakeCurrent(extra->hDC, NULL);
 	wglDeleteContext(extra->hGLRC);
+}
+
+
+static float cellColor[3];
+static float voidColor[3];
+
+static void InitializeGLScene(const config::Configuration &settings) {
+	cellColor[0] = settings.displayCellColor[0] / 255.0f;
+	cellColor[1] = settings.displayCellColor[1] / 255.0f;
+	cellColor[2] = settings.displayCellColor[2] / 255.0f;
+
+	voidColor[0] = settings.displayVoidColor[0] / 255.0f;
+	voidColor[1] = settings.displayVoidColor[1] / 255.0f;
+	voidColor[2] = settings.displayVoidColor[2] / 255.0f;
 }
 
 static void CreateGLScene(Chip8DisplayExtra *extra, double l, double t, double r, double b) {
@@ -207,13 +358,15 @@ static void CreateGLScene(Chip8DisplayExtra *extra, double l, double t, double r
 	GLuint idTex;
 	GLuint idShaderV, idShaderF, idShaderPrg;
 
+	const chip8::IDisplay *display = interpretation->getDisplay();
+
 	glGenTextures(1, &idTex);
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, idTex);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, defaultDisplay.width(), 
-		defaultDisplay.height(), 0, GL_RED, GL_UNSIGNED_BYTE, NULL);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, display->width(), 
+		display->height(), 0, GL_RED, GL_UNSIGNED_BYTE, NULL);
 
 	idShaderV = glCreateShader(GL_VERTEX_SHADER);
 	idShaderF = glCreateShader(GL_FRAGMENT_SHADER);
@@ -232,12 +385,16 @@ static void CreateGLScene(Chip8DisplayExtra *extra, double l, double t, double r
 	{
 		glUseProgram(idShaderPrg);
 
+		GLint uniformBackgroundColor = glGetUniformLocation(idShaderPrg, "backgroundColor");
 		GLint uniformForegroundColor = glGetUniformLocation(idShaderPrg, "foregroundColor");
 		GLint uniformFrame = glGetUniformLocation(idShaderPrg, "frame");
 
-		GLfloat foregroundColor[] = DISPLAY_PIXEL_COLOR;
-
-		glUniform4fv(uniformForegroundColor, 1, foregroundColor);
+		GLfloat colors[][4] = {
+			{ cellColor[0], cellColor[1], cellColor[2], 1.0	},
+			{ voidColor[0], voidColor[1], voidColor[2], 1.0	}
+		};
+		glUniform4fv(uniformBackgroundColor, 1, colors[1]);
+		glUniform4fv(uniformForegroundColor, 1, colors[0]);
 		glUniform1i(uniformFrame, 0);
 	}
 	extra->screenVBO = idVBO;
@@ -269,10 +426,16 @@ static void DrawGLScene(Chip8DisplayExtra *extra) {
 }
 
 
+///////////////////////////////////////////////////////////////////////////////////////
+// Windows application
+///////////////////////////////////////////////////////////////////////////////////////
+
 #define ASSIGN_DISPLAY_EXTRA(hwnd, extraPtr)	SetWindowLongPtr(hWnd, GWLP_USERDATA, (LONG)extraPtr)
 #define OBTAIN_DISPLAY_EXTRA(hwnd)				((Chip8DisplayExtra*)GetWindowLongPtr(hWnd, GWLP_USERDATA))
 
 static BOOL Chip8DisplayCreate(HWND hWnd, LPCREATESTRUCT lpCreateStruct) {
+	interpretation->assignOwnerWindow(hWnd);
+
 	auto extra = new Chip8DisplayExtra;
 	{
 		extra->hDC = GetDC(hWnd);
@@ -299,15 +462,13 @@ static VOID Chip8DisplayDestroy(HWND hWnd) {
 	}
 	delete extra;
 
+	interpretation->assignOwnerWindow(NULL);
 	PostQuitMessage(0);
 }
 
 
 static UINT frames;
 static ULONGLONG timeLastFrame;
-static RECT counterTextRect = {
-	2, 2, 95, 25
-};
 
 static void UpdateFrameRateCounter() {
 	ULONGLONG timeCurrent = GetTickCount64();
@@ -386,14 +547,11 @@ static VOID Chip8DisplayCommand(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify
 				ofn.lpstrFile = new TCHAR[ofn.nMaxFile + 1];
 				ofn.lpstrFile[0] = _T('\0');
 			}
-			if (machine.isOk()) {
-				SendMessage(hWnd, WM_INTERPRETER, MACHINE_STATE_IDLE, 0);
-			}
-			if (GetOpenFileName(&ofn)) {
-				machine.reset(std::ifstream(ofn.lpstrFile, std::ios_base::binary));
-			}
-			PostMessage(hWnd, WM_INTERPRETER, MACHINE_STATE_RUNNING, 0);
+			interpretation->pause();
 
+			if (GetOpenFileName(&ofn)) {
+				interpretation->load(ofn.lpstrFile);
+			}
 			delete[] ofn.lpstrFile;
 
 			HMENU hMenu = GetMenu(hWnd);
@@ -405,10 +563,7 @@ static VOID Chip8DisplayCommand(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify
 			break;
 		}
 		case ID_FILE_RESET:
-			machine.reset();
-
-			SendMessage(hWnd, WM_INTERPRETER, MACHINE_STATE_IDLE, 0);
-			PostMessage(hWnd, WM_INTERPRETER, MACHINE_STATE_RUNNING, 0);
+			interpretation->reset();
 
 			CheckMenuItem(GetMenu(hWnd), ID_FILE_PAUSE, MF_UNCHECKED);
 			break;
@@ -423,40 +578,48 @@ static VOID Chip8DisplayCommand(HWND hWnd, int id, HWND hWndCtl, UINT codeNotify
 				}
 				assert(GetMenuItemInfo(hMenu, ID_FILE_PAUSE, FALSE, &mi));
 
-				if (mi.fState & MFS_CHECKED) {
-					PostMessage(hWnd, WM_INTERPRETER, MACHINE_STATE_RUNNING, 0);
+				if ((mi.fState & MFS_ENABLED) == MFS_ENABLED) {
+					if (mi.fState & MFS_CHECKED) {
+						interpretation->unpause();
 
-					CheckMenuItem(hMenu, ID_FILE_PAUSE, MF_UNCHECKED);
-				}
-				else {
-					PostMessage(hWnd, WM_INTERPRETER, MACHINE_STATE_IDLE, 0);
+						CheckMenuItem(hMenu, ID_FILE_PAUSE, MF_UNCHECKED);
+					}
+					else {
+						interpretation->pause();
 
-					CheckMenuItem(hMenu, ID_FILE_PAUSE, MF_CHECKED);
+						CheckMenuItem(hMenu, ID_FILE_PAUSE, MF_CHECKED);
+					}
 				}
 			}
 			break;
 		}
 		case ID_FILE_EXIT:
-			SendMessage(hWnd, WM_INTERPRETER, MACHINE_STATE_IDLE, 0);
-
 			DestroyWindow(hWnd);
 			break;
 		}
 	}
 }
 
-static VOID Chip8DisplayKeyUpDown(HWND hwnd, UINT vk, BOOL fDown, int cRepeat, UINT flags) {
-	defaultKeypad.updateKey(vk, fDown);
+static VOID Chip8DisplayKeyUpDown(HWND hWnd, UINT vk, BOOL fDown, int cRepeat, UINT flags) {
+	if (vk == VK_PAUSE) {
+		if (!fDown) {
+			PostMessage(hWnd, WM_COMMAND, MAKEWPARAM(ID_FILE_PAUSE, 0), (LPARAM)hWnd);
+		}
+	}
+	else {
+		interpretation->updateKeypadKey(vk, fDown);
+	}
 }
 
-static VOID Chip8DisplayInterpreter(HWND hWnd, UINT mState) {
-	switch (mState) {
-	case MACHINE_STATE_RUNNING:
-		EnterInterpretationLoop(hWnd);
-		break;
+static VOID Chip8DisplayInterpretation(HWND hWnd, UINT what) {
+	switch (what) {
+	case INTERPRETATION_EVENT_FRAME_UPDATE:
+		const chip8::IDisplay *display = interpretation->getDisplay();
 
-	case MACHINE_STATE_IDLE:
-		ExitInterpretetionLoop();
+		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, display->width(), display->height(),
+			GL_RED, GL_UNSIGNED_BYTE, interpretation->consumeDisplayData());
+
+		InvalidateRect(hWnd, NULL, FALSE);
 		break;
 	}
 }
@@ -470,7 +633,7 @@ static LRESULT CALLBACK Chip8DisplayWndProc(HWND hWnd, UINT Msg, WPARAM wParam, 
 		HANDLE_MSG(hWnd, WM_COMMAND, Chip8DisplayCommand);
 		HANDLE_MSG(hWnd, WM_KEYDOWN, Chip8DisplayKeyUpDown);
 		HANDLE_MSG(hWnd, WM_KEYUP, Chip8DisplayKeyUpDown);
-		HANDLE_MSG(hWnd, WM_INTERPRETER, Chip8DisplayInterpreter);
+		HANDLE_MSG(hWnd, WM_INTERPRETATION, Chip8DisplayInterpretation);
 	};
 	return DefWindowProc(hWnd, Msg, wParam, lParam);
 }
@@ -547,41 +710,57 @@ void PrintOpenGLShaderLog(GLuint shaderId) {
 #endif
 
 
-#define CHIP8_DISPLAY_WINDOW _T("Chip8Display")
+#define CHIP8_DISPLAY_WINDOW		_T("Chip8Display")
+#define CHIP8_DISPLAY_WINDOW_STYLE	(WS_OVERLAPPEDWINDOW & ~(WS_SIZEBOX | WS_MAXIMIZEBOX))
 
 DWORD CALLBACK ApplicationInitialization(HINSTANCE hInst, int nCmdShow) {
-	WNDCLASS wc = {
-		CS_OWNDC | CS_HREDRAW | CS_VREDRAW,
-		Chip8DisplayWndProc,
-		0,
-		sizeof(Chip8DisplayExtra*),
-		hInst,
-		0,
-		LoadCursor(NULL, IDC_ARROW),
-		0,
-		MAKEINTRESOURCE(IDR_MENU1),
-		CHIP8_DISPLAY_WINDOW
-	};
-	RegisterClass(&wc);
+	config::Configuration settings;
 
-	auto windowStyle = WS_OVERLAPPEDWINDOW & ~(WS_SIZEBOX | WS_MAXIMIZEBOX);
+	if (!config::read(std::istream(NULL), settings)) {
+		settings = config::Configuration::DEFAULT;
 
-	RECT windowRect = { 0, 0, DISPLAY_WINDOW_WIDTH, DISPLAY_WINDOW_HEIGHT };
-	AdjustWindowRect(&windowRect, windowStyle, TRUE);
+		// TODO: write default settings to *.ini file.
+	}
+	InitializeGLScene(settings);
+	InitializeInterpretation(settings);
 
-	HWND hWnd = CreateWindow(wc.lpszClassName, _T("CHIP-8"), windowStyle, CW_USEDEFAULT, 0, 
-		windowRect.right - windowRect.left, windowRect.bottom - windowRect.top, NULL, NULL, hInst, NULL);
-	
-	if (hWnd == NULL)
-		return GetLastError();
+	HWND hWnd;
+	{
+		WNDCLASS wc = {
+			CS_OWNDC | CS_HREDRAW | CS_VREDRAW,
+			Chip8DisplayWndProc,
+			0,
+			sizeof(Chip8DisplayExtra*),
+			hInst,
+			0,
+			LoadCursor(NULL, IDC_ARROW),
+			0,
+			MAKEINTRESOURCE(IDR_MENU1),
+			CHIP8_DISPLAY_WINDOW
+		};
+		RegisterClass(&wc);
 
-	ShowWindow(hWnd, nCmdShow);
+		RECT windowRect = {
+			0,
+			0,
+			chip8::DefaultDisplay::FRAME_WIDTH  * settings.displayCellSize,
+			chip8::DefaultDisplay::FRAME_HEIGHT * settings.displayCellSize
+		};
+		AdjustWindowRect(&windowRect, CHIP8_DISPLAY_WINDOW_STYLE, TRUE);
+		hWnd = CreateWindow(wc.lpszClassName, _T("CHIP-8"), CHIP8_DISPLAY_WINDOW_STYLE, CW_USEDEFAULT, 0,
+			windowRect.right - windowRect.left, windowRect.bottom - windowRect.top, NULL, NULL, hInst, NULL);
+	}
+	if (hWnd)
+	{
+		ShowWindow(hWnd, nCmdShow);
 
-	return ERROR_SUCCESS;
+		return ERROR_SUCCESS;
+	}
+	return GetLastError();
 }
 
 VOID CALLBACK ApplicationUninitialization() {
-	/* Nothing to do */
+	UninitializeInterpretation();
 }
 
 

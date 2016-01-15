@@ -9,13 +9,13 @@
 #ifdef _DEBUG
 #define LOGGER_INIT(Logger)							logger::init(logger::LoggerInitializer<Logger>())
 #define LOGGER_PRINT_EMPTYLN()						logger::printLn()
-#define LOGGER_PRINTL_TEXTLN(text)					logger::printLn(text) 
-#define LOGGER_PRINTL_FORMATTED_TEXTLN(text, arg)	logger::printLn(text, 0, arg) 
+#define LOGGER_PRINT_TEXTLN(text)					logger::printLn(text) 
+#define LOGGER_PRINT_FORMATTED_TEXTLN(text, arg)	logger::printLn(text, 0, arg) 
 #else
 #define LOGGER_INIT(Logger)
 #define LOGGER_PRINT_EMPTYLN()
-#define LOGGER_PRINTL_TEXTLN(text)
-#define LOGGER_PRINTL_FORMATTED_TEXTLN(fmt, arg)
+#define LOGGER_PRINT_TEXTLN(text)
+#define LOGGER_PRINT_FORMATTED_TEXTLN(fmt, arg)
 #endif // _DEBUG
 
 

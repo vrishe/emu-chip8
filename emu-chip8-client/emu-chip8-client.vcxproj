@@ -11,7 +11,10 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="configuration.h" />
     <ClInclude Include="main.h" />
+    <ClInclude Include="NBufferedDisplay.h" />
+    <ClInclude Include="QueueThread.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="string.h" />
@@ -28,7 +31,9 @@
     <ResourceCompile Include="Menu.rc" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="configuration.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="QueueThread.cpp" />
     <ClCompile Include="stdafx.cpp" />
     <ClCompile Include="string.cpp" />
   </ItemGroup>

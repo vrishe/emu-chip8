@@ -761,7 +761,7 @@ TEST_F(OriginalInterpreterTest, OpcodeDXYN_6XNN_ANNN) {
 	EXPECT_EQ(8, invalidRect.w);
 	EXPECT_EQ(8, invalidRect.h);
 
-	EXPECT_EQ(11320, interpreter->getCyclesCount());
+	EXPECT_EQ(17640, interpreter->getCyclesCount());
 }
 
 TEST_F(OriginalInterpreterTest, OpcodeEX9E_EXA1_6XNN) {

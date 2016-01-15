@@ -63,6 +63,7 @@ namespace chip8 {
 		}
 
 		clock doCycle();
+		void refreshTimers();
 
 		template <size_t prgLen>
 		void reset(const byte(&prg)[prgLen]) {
@@ -143,11 +144,8 @@ namespace chip8 {
 		const size_t memorySize;
 		byte *memory;
 
-		void reset_impl();
-
-		void refreshTimers();
+		void resetImpl();
 		void onTimerTick(word timerId);
-		
 
 
 		// ========================================================

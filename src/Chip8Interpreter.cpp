@@ -38,7 +38,7 @@ namespace chip8 {
 		memcpy(memory, font, sizeof(font));
 
 		rndSeed = reinterpret_cast<word>(this);
-		reset_impl();
+		resetImpl();
 	}
 
 	Interpreter::~Interpreter() {
@@ -49,7 +49,7 @@ namespace chip8 {
 	void Interpreter::reset(const byte *prg, size_t prgLen)
 	{
 		assert(prg);
-		reset_impl();
+		resetImpl();
 
 		byte *clientMemory = memory + pc;
 		size_t countPadded = memorySize - pc;
@@ -73,11 +73,12 @@ namespace chip8 {
 		if (countPadded > 0) {
 			memset(clientMemory, 0x00, countPadded);
 		}
+		cls();
 	}
 	void Interpreter::reset(std::istream &prgStream)
 	{
 		assert(prgStream);
-		reset_impl();
+		resetImpl();
 
 		byte *clientMemory = memory + pc;
 		size_t countPadded = memorySize - pc;
@@ -103,19 +104,19 @@ namespace chip8 {
 		if (countPadded > 0) {
 			memset(clientMemory, 0x00, countPadded);
 		}
+		cls();
 	}
 
 	void Interpreter::reset() {
 		if (isOk()) {
-			reset_impl();
+			resetImpl();
 
 			lastError = INTERPRETER_ERROR_OK;
 		}
+		cls();
 	}
 
-	void Interpreter::reset_impl() {
-		cls();
-
+	void Interpreter::resetImpl() {
 		memset(stack, 0x00, sizeof(stack));
 		memset(registers, 0x00, sizeof(registers));
 
@@ -173,15 +174,7 @@ namespace chip8 {
 		countdown_timer &timer = timers[timerId];
 
 		if (timer.value > 0) {
-			clock difference = countCycles - timer.timestamp;
-
-			if (difference >= TIMER_TICK_CYCLES) {
-				clock period = difference / TIMER_TICK_CYCLES;
-				clock remainder = difference % TIMER_TICK_CYCLES;
-
-				timer.value -= byte(period);
-				timer.timestamp = countCycles - remainder;
-			}						
+			timer.value--;
 		}
 	}
 
@@ -271,7 +264,6 @@ namespace chip8 {
 			++rndSeed;
 		}
 		countCycles += result;
-		refreshTimers();	
 
 		return result;
 	}
@@ -380,28 +372,28 @@ namespace chip8 {
 	}
 
 	// As per: http://laurencescotford.co.uk/?p=266
-	// carry flag is being assigned the last. This mean that is you
+	// carry flag is being assigned the last. This mean that if you
 	// use REG F as output, the result will be overwritten by a status flag.
 	inline void Interpreter::adc(size_t idx, size_t idy) {
 		byte &dst = READ_REGISTER(idx);
 		word result = dst + READ_REGISTER(idy);
 
 		dst = byte(result);
-		carry = !!(result >> 8) ? 0x01 : 0x00;
+		carry = !!(result & 0x100) ? 0x01 : 0x00;
 	}
 	inline void Interpreter::sbxyc(size_t idx, size_t idy) {
 		byte &dst = READ_REGISTER(idx);
 		word result = dst - READ_REGISTER(idy);
 
 		dst = byte(result);
-		carry = !!(result >> 8) ? 0x00 : 0x01;
+		carry = !!(result & 0x100) ? 0x00 : 0x01;
 	}
 	inline void Interpreter::sbyxc(size_t idx, size_t idy) {
 		byte &dst = READ_REGISTER(idx);
 		word result = READ_REGISTER(idy) - dst;
 
 		dst = byte(result);
-		carry = !!(result >> 8) ? 0x00 : 0x01;
+		carry = !!(result & 0x100) ? 0x00 : 0x01;
 	}
 
 	void Interpreter::shr_modern(size_t idx, size_t idy) {
@@ -482,35 +474,29 @@ namespace chip8 {
 		deviceDisplay->invalidate();
 	}
 	inline void Interpreter::sprite(size_t idx, size_t idy, word value) {
+		bool collision = false;
+
 		if (value > 0) {
 			const size_t y = READ_REGISTER(idy) % deviceDisplay->height();
 			const size_t x = READ_REGISTER(idx) % deviceDisplay->width();
 			const size_t w = std::min<size_t>(deviceDisplay->width() - x, 8);
+			const size_t h = std::min<size_t>(deviceDisplay->height() - y, value);
+	
 			const byte strideMask = (w < 8) ? (0xFF << (8 - w)) : 0xFF;
-
-			bool collision = false;
-
-			size_t h = 0;
-			for (size_t r = y, rmax = deviceDisplay->height(), 
-					i = index, imax = index + value;
-				r < rmax && i < imax; ++i, ++r, ++h) {
+			for (size_t i = index, r = y, rmax = y + h; r < rmax; ++i, ++r) {
 
 				byte *line = deviceDisplay->getLine(r, x);
-				for (byte *column = line, stride = (READ_MEMORY(i) & strideMask);
-					!!stride; ++column, stride <<= 1) {
+				for (byte *column = line, data = (READ_MEMORY(i) & strideMask);
+					!!data; ++column, data <<= 1) {
 
-					if (!!(stride & 0x80)) {
-						byte &pixel = *column;
-
-						pixel ^= 0xFF;
-						collision |= !pixel;
+					if (!!(data & 0x80)) {
+						collision |= !(*column ^= 0xFF);
 					}
 				}
 			}
-			carry = collision ? 0x01 : 0x00;
-
 			deviceDisplay->invalidate(byte(x), byte(y), byte(w), byte(h));
 		}
+		carry = collision ? 0x01 : 0x00;
 	}
 	inline void Interpreter::sound(size_t idx) {
 		word reg = READ_REGISTER(idx);
@@ -696,7 +682,7 @@ namespace chip8 {
 		// (((2533 + 3666) / 3) + 3812) / 15 ~ 412,
 		// where first part is for avg. IDL await time,
 		// the second is a worst case of time consumtion by drawing routine 
-		// (15 rows, collision on each row, 14*14 pixels offscreen).
+		// (15 rows, collision on each row, 7*14 pixels offscreen).
 		//
 		// See: http://laurencescotford.co.uk/?p=304 for details.
 		return COUNT_CYCLES_TAKEN_BY_GROUPN(rowsCount * 412);
