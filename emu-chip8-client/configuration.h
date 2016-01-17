@@ -14,6 +14,8 @@ namespace config {
 		unsigned char displayCellColor[3];
 		unsigned char displayVoidColor[3];
 
+		//Speaker
+		bool hasSpeaker;
 	};
 
 	bool read(std::istream &is, Configuration &config);

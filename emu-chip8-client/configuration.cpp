@@ -9,7 +9,9 @@ namespace config {
 
 		10,							// display cell size
 		{ 0x00, 0xA7, 0x00 },		// display cell color
-		{ 0x1A, 0x1A, 0x1A }		// display void color
+		{ 0x1A, 0x1A, 0x1A },		// display void color
+
+		true						// speaker enabled
 	};
 
 

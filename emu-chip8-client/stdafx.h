@@ -31,5 +31,8 @@
 #include <gl/GL.h>
 #include <gl/GLU.h>
 
+#include <dsound.h>
+#include <initguid.h>
+
 #include "unicode.h"
 #include "string.h"
