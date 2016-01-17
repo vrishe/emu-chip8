@@ -25,6 +25,7 @@
 #define WIN23_LEAN_AND_MEAN
 #include <Windows.h>
 #include <windowsx.h>
+#include <CommCtrl.h>
 
 #include "GL/glew.h"
 #include "GL/wglew.h"

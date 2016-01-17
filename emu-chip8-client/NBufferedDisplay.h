@@ -64,9 +64,11 @@ namespace platform {
 			return planes[indexProducer].buffer + index * w + offset;
 		}
 
+
 		chip8::byte *consume() {
 			return planes[indexConsumer = (indexConsumer + 1) % n].buffer;
 		}
+
 
 		void validate() {
 			invalid = false;

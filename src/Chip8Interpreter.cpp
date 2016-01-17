@@ -179,22 +179,16 @@ namespace chip8 {
 	}
 
 
-#define FETCH_OPCODE(offset, lower, higher)								\
-	(																	\
-		assert(lower <= (offset) && (offset) < higher),					\
-		(memory + (offset))												\
-	)
 #define MODIFY_REGISTER_OP(idx, op, value)								\
-		{																	\
+	{																	\
 		assert(0U <= (idx) && (idx) < Interpreter::REGISTERS_COUNT);	\
 		registers[idx] op (value);										\
-		}
+	}
 #define READ_REGISTER(idx)												\
 	(																	\
 		assert(0U <= (idx) && (idx) < Interpreter::REGISTERS_COUNT),	\
 		registers[idx]													\
 	)
-
 
 #define MODIFY_ARRAY_OP_(arr, idx, op, value, lower, higher, errc)	\
 	(lastError = (!(lower <= (idx) && (idx) < higher) ? (errc) : INTERPRETER_ERROR_OK), arr[idx] op (value))
@@ -211,6 +205,8 @@ namespace chip8 {
 #define READ_MEMORY(idx) \
 	READ_ARRAY_(memory, idx, 0U, memorySize, INTERPRETER_ERROR_INDEX_OUT_OF_BOUNDS)
 
+#define FETCH_OPCODE(offset, lower, higher, errc) \
+	(lastError = (!(lower <= (offset) && (offset) < higher) ? (errc) : INTERPRETER_ERROR_OK), (memory + (offset)))
 
 #define PROGRAM_COUNTER_STEP sizeof(Opcode)
 #define EXTRACT_OP(opcode) (opcode.hi >> 4)
@@ -256,7 +252,7 @@ namespace chip8 {
 
 		if (!isKeyAwaited()) {
 			Opcode opcode = *reinterpret_cast<Opcode *>(const_cast<byte*>(
-				FETCH_OPCODE(pc, OFFSET_PROGRAM_START, memorySize)));
+				FETCH_OPCODE(pc, OFFSET_PROGRAM_START, memorySize, INTERPRETER_ERROR_PROGRAM_COUNTER_CORRUPTED)));
 
 			pc += PROGRAM_COUNTER_STEP;
 			result += (this->*Interpreter::macroCodesLUT[EXTRACT_OP(opcode)]) (opcode);

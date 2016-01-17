@@ -24,23 +24,19 @@
 #define HANDLE_WM_INTERPRETATION(hwnd, wParam, lParam, fn) \
     ((fn)((hwnd), (UINT)(wParam), lParam), 0L)
 
-#define INTERPRETATION_EVENT_DISPLAY 1
-#define INTERPRETATION_EVENT_SPEAKER 2
+#define INTERPRETATION_EVENT_DISPLAY	1
+#define INTERPRETATION_EVENT_SPEAKER	2
+#define INTERPRETATION_EVENT_ERROR		3
 
-
-#define INTERPRETATION_FRAME_RATE 166667
 
 class Interpretation {
 
 	platform::NBufferedDisplay<4>	*display;
 	platform::VKMappedKeypad		*keypad;
 	chip8::Interpreter				*interpreter;
+	platform::QueueThread			*executionThread;
 
-	HANDLE pauseEvent;
 	HWND hWndOwner;
-
-	platform::QueueThread *executionThread;
-
 
 	chip8::clock cyclesPerFrame;
 	chip8::clock cycles;
@@ -49,36 +45,31 @@ class Interpretation {
 	LARGE_INTEGER ticks, ticksCurrent;
 
 	void threadFunc() {
-		DWORD waitResult = WaitForSingleObject(pauseEvent, INFINITE);
+		bool isPlayingSound = interpreter->isPlayingSound();
 
-		if (waitResult == WAIT_OBJECT_0) {
-			bool isPlayingSound = interpreter->isPlayingSound();
-
-			cycles = 0;
-			while (cycles < cyclesPerFrame) {
-				if (interpreter->isOk()) {
-					cycles += interpreter->doCycle();
-				}
-				else {
-					if (interpreter->getLastError() != chip8::Interpreter::INTERPRETER_ERROR_NO_PROGRAM) {
-						LOGGER_PRINT_FORMATTED_TEXTLN("Interpreter failure: %d. Pausing...", interpreter->getLastError());
-
-						pause();
-					}
-					return;
-				}
+		cycles = 0;
+		while (cycles < cyclesPerFrame) {
+			if (interpreter->isOk()) {
+				cycles += interpreter->doCycle();
 			}
-			if (display->isInvalid()) {
-				PostMessage(hWndOwner, WM_INTERPRETATION, INTERPRETATION_EVENT_DISPLAY, 0);
+			else {
+				PostMessage(hWndOwner, WM_INTERPRETATION, INTERPRETATION_EVENT_ERROR, interpreter->getLastError());
+				pause();
 
-				(++*display).validate();
-			}
-			interpreter->refreshTimers();
-
-			if (interpreter->isPlayingSound() != isPlayingSound) {
-				PostMessage(hWndOwner, WM_INTERPRETATION, INTERPRETATION_EVENT_SPEAKER, !isPlayingSound);
+				return;
 			}
 		}
+		if (display->isInvalid()) {
+			PostMessage(hWndOwner, WM_INTERPRETATION, INTERPRETATION_EVENT_DISPLAY, 0);
+
+			(++*display).validate();
+		}
+		interpreter->refreshTimers();
+
+		if (interpreter->isPlayingSound() != isPlayingSound) {
+			PostMessage(hWndOwner, WM_INTERPRETATION, INTERPRETATION_EVENT_SPEAKER, !isPlayingSound);
+		}
+
 		do {
 			QueryPerformanceCounter(&ticks);
 		} while (ticks.QuadPart - ticksCurrent.QuadPart < ticksPerFrame.QuadPart);
@@ -99,8 +90,6 @@ public:
 		display = new platform::NBufferedDisplay<4>();
 		keypad = new platform::VKMappedKeypad();
 		interpreter = new chip8::Interpreter(display, keypad);
-
-		pauseEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
 		executionThread = new platform::QueueThread(&Interpretation::threadFunc, this);
 
 		QueryPerformanceFrequency(&ticksPerFrame);
@@ -109,13 +98,7 @@ public:
 	}
 
 	~Interpretation() {
-		unpause();
-
 		delete executionThread;
-		// Call order is important here as we rely 
-		// on this when deleting stuff below.
-		CloseHandle(pauseEvent);
-
 		delete interpreter;
 		delete keypad;
 		delete display;
@@ -167,7 +150,7 @@ public:
 			}
 		};
 		executionThread->post(std::shared_ptr<platform::ITask>(new LoadTask(interpreter, programFile)));
-		unpause();
+		executionThread->resume();
 	}
 
 	void reset() {
@@ -190,17 +173,17 @@ public:
 			}
 		};
 		executionThread->post(std::shared_ptr<platform::ITask>(new ResetTask(interpreter)));
-		unpause();
+		executionThread->resume();
 	}
 
 
 
 	void pause() {
-		ResetEvent(pauseEvent);
+		executionThread->pause();
 	}
 
 	void unpause() {
-		SetEvent(pauseEvent);
+		executionThread->resume();
 	}
 
 };
@@ -771,6 +754,7 @@ static VOID Chip8DisplayInterpretation(HWND hWnd, UINT what, LPARAM lParam) {
 		break;
 	}
 	case INTERPRETATION_EVENT_SPEAKER:
+	{
 		if (!!lParam) {
 			EnableDSSpeaker();
 		}
@@ -778,6 +762,20 @@ static VOID Chip8DisplayInterpretation(HWND hWnd, UINT what, LPARAM lParam) {
 			DisableDSSpeaker();
 		}
 		break;
+	}
+	case INTERPRETATION_EVENT_ERROR:
+	{
+		MessageBeep(MB_ICONWARNING);
+
+		HMENU hMenu = GetMenu(hWnd);
+		{
+			EnableMenuItem(hMenu, ID_FILE_RESET, MF_DISABLED);
+			EnableMenuItem(hMenu, ID_FILE_PAUSE, MF_DISABLED);
+		}
+		CheckMenuItem(hMenu, ID_FILE_PAUSE, MF_UNCHECKED);
+
+		LOGGER_PRINT_FORMATTED_TEXTLN("Interpreter failure: %d. Pausing...", lParam);
+	}
 	}
 }
 
@@ -881,6 +879,8 @@ DWORD CALLBACK ApplicationInitialization(HINSTANCE hInst, int nCmdShow) {
 	InitializeGLScene(settings);
 	InitializeSpeaker(settings);
 	InitializeInterpretation(settings);
+
+	InitCommonControls();
 
 	HWND hWnd;
 	{

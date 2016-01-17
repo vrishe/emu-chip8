@@ -14,9 +14,10 @@ namespace platform {
 
 	class QueueThread {
 
-		typedef void *pmutex;
+		typedef void *pmutex, *pevent;
 
 		pmutex mutex;
+		pevent event;
 		
 		std::thread thread;
 		std::queue<std::shared_ptr<ITask>> backlog;
@@ -50,6 +51,9 @@ namespace platform {
 		virtual ~QueueThread();
 
 		void post(const std::shared_ptr<ITask> &task);
+
+		void pause();
+		void resume();
 	};
 
 } // namespace platform
