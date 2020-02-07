@@ -41,6 +41,9 @@
     <ClInclude Include="configuration.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="decay_copy.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Menu.rc" />

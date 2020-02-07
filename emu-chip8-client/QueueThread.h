@@ -44,8 +44,8 @@ namespace platform {
 
 		template<typename Fn, typename... Args>
 		explicit QueueThread(Fn &&f, Args&&... args) {
-			initialize(std::bind(std::_Decay_copy(std::forward<Fn>(f)),
-				std::_Decay_copy(std::forward<Args>(args))...));
+			initialize(std::bind(std::decay_copy(std::forward<Fn>(f)),
+				std::decay_copy(std::forward<Args>(args))...));
 		}
 
 		virtual ~QueueThread();

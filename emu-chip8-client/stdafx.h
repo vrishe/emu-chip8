@@ -21,6 +21,8 @@
 #include <queue>
 #include <sstream>
 #include <thread>
+#include <type_traits>
+#include <utility>
 
 #define WIN23_LEAN_AND_MEAN
 #include <Windows.h>
@@ -37,3 +39,4 @@
 
 #include "unicode.h"
 #include "string.h"
+#include "decay_copy.h"
