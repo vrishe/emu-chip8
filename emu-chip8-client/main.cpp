@@ -47,6 +47,12 @@ class Interpretation {
 	void threadFunc() {
 		bool isPlayingSound = interpreter->isPlayingSound();
 
+        if (display->isInvalid()) {
+            PostMessage(hWndOwner, WM_INTERPRETATION, INTERPRETATION_EVENT_DISPLAY, 0);
+
+            (++*display).validate();
+        }
+
 		cycles = 0;
 		while (cycles < cyclesPerFrame) {
 			if (interpreter->isOk()) {
@@ -59,11 +65,7 @@ class Interpretation {
 				return;
 			}
 		}
-		if (display->isInvalid()) {
-			PostMessage(hWndOwner, WM_INTERPRETATION, INTERPRETATION_EVENT_DISPLAY, 0);
 
-			(++*display).validate();
-		}
 		interpreter->refreshTimers();
 
 		if (interpreter->isPlayingSound() != isPlayingSound) {

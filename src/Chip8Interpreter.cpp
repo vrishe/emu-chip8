@@ -236,7 +236,7 @@ namespace chip8 {
 				// Reset timer sound as it will be overridden by kbState hit await routine.
 				timer.value = 0;
 			}
-			else {
+			else if (kbState != KEY_NONE) {
 				// Continue beep'ing until kbState is not released.
 				if (timer.value == 0) {
 					timer.value = 4;
